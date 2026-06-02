@@ -254,6 +254,28 @@ static int total_lines(void) {
     return n;
 }
 
+// Count total characters (including newlines)
+static int count_chars(void) {
+    return gap_len(&E.text);
+}
+
+// Count words (space/tab/newline delimited)
+static int count_words(void) {
+    int words = 0;
+    int in_word = 0;
+    int len = gap_len(&E.text);
+    for (int i = 0; i < len; i++) {
+        char c = gap_char(&E.text, i);
+        if (isspace(c)) {
+            in_word = 0;
+        } else if (!in_word) {
+            in_word = 1;
+            words++;
+        }
+    }
+    return words;
+}
+
 // visual column for cursor on its line (tabs expanded)
 static int cursor_vcol(void) {
     int ln  = pos_to_line(E.cursor);
@@ -366,12 +388,19 @@ static void draw_statusbar(void) {
     move(E.rows - 2, 0);
     int ln  = pos_to_line(E.cursor);
     int col = cursor_vcol();
-    char left[128], right[64];
+
+    int chars = count_chars();
+    int words = count_words();
+
+    char left[128], right[128];
+
     snprintf(left,  sizeof left,  " %.40s%s",
              E.filename[0] ? E.filename : "[No Name]",
              E.dirty ? " [+]" : "");
-    snprintf(right, sizeof right, "Ln %d, Col %d | %d lines ",
-             ln + 1, col + 1, total_lines());
+
+    snprintf(right, sizeof right, "Ln %d, Col %d | %d lines | %d words %d chars ",
+             ln + 1, col + 1, total_lines(), words, chars);
+
     int pad = E.cols - (int)strlen(left) - (int)strlen(right);
     printw("%s", left);
     for (int i = 0; i < pad && i < E.cols; i++) addch(' ');

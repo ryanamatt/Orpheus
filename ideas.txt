@@ -3,5 +3,3 @@ Search and Replace to go with Find - take a search term and a replacement term, 
 Support for Multiple Buffers/Tabs - switch between multiple open files using Ctrl-N (Next) or Ctrl-P (Previous).
 
 Possible Add a terminal shell
-
-Word Count - Adding a character and word count
