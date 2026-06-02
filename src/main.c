@@ -32,6 +32,9 @@
  * auto_indent: int
  *   If non-zero, pressing Enter copies the leading whitespace of the current
  *   line to the new line automatically. Default: 1.
+ * show_statusbar: int
+ *   If 0, hides the bottom status/command bar, giving one extra row of text.
+ *   Default: 1.
  */
 
 #include <ncurses.h>
@@ -45,8 +48,9 @@
 
 // #define TAB_WIDTH   4
 int TAB_WIDTH = 4;          // spaces per Tab keypress
-int SHOW_LINE_NUMBERS = 1;  // show line-number gutter?
-int AUTO_INDENT = 1;        // copy leading whitespace on Enter?
+int SHOW_LINE_NUMBERS = 1;  // show line-number gutter
+int AUTO_INDENT = 1;        // copy leading whitespace on Enter
+int SHOW_STATUSBAR = 1;    // show the status/command bar row
 
 #define MAX_STATUS  512
 #define CHUNK       64 // gap-buffer growth step (in chars)
@@ -147,6 +151,10 @@ void load_config(void) {
 
             else if (strcmp(key, "auto_indent") == 0) {
                 AUTO_INDENT = atoi(val);
+            }
+
+            else if (strcmp(key, "show_statusbar") == 0) {
+                SHOW_STATUSBAR = atoi(val);
             }
         }
     }
@@ -256,17 +264,17 @@ static int save_file(void) {
 static void adjust_scroll(void) {
     int cur_line = pos_to_line(E.cursor);
     int vcol     = cursor_vcol();
-    int text_rows = E.rows - 2;   // status + command bar
+    int text_rows = E.rows - (SHOW_STATUSBAR ? 2 : 0);   // status + command bar
 
-    if (cur_line < E.row_off)                    E.row_off = cur_line;
-    if (cur_line >= E.row_off + text_rows)        E.row_off = cur_line - text_rows + 1;
-    if (vcol     < E.col_off)                    E.col_off = vcol;
-    if (vcol     >= E.col_off + E.cols - 6)       E.col_off = vcol - (E.cols - 6) + 1;
+    if (cur_line < E.row_off)               E.row_off = cur_line;
+    if (cur_line >= E.row_off + text_rows)  E.row_off = cur_line - text_rows + 1;
+    if (vcol     < E.col_off)               E.col_off = vcol;
+    if (vcol     >= E.col_off + E.cols - 6) E.col_off = vcol - (E.cols - 6) + 1;
 }
 
 static void draw_rows(void) {
     int total = total_lines();
-    int text_rows = E.rows - 2;
+    int text_rows = E.rows - (SHOW_STATUSBAR ? 2 : 0);
 
     for (int y = 0; y < text_rows; y++) {
         int ln = y + E.row_off;
@@ -345,8 +353,10 @@ static void refresh_screen(void) {
     int vcol = cursor_vcol();
 
     draw_rows();
-    draw_statusbar();
-    draw_cmdbar();
+    if (SHOW_STATUSBAR) {
+        draw_statusbar();
+        draw_cmdbar();
+    }
 
     /* position real cursor */
     move(ln - E.row_off, 5 + vcol - E.col_off);
@@ -502,12 +512,12 @@ static void move_line_end(void) {
 }
 
 static void move_page_up(void) {
-    int text_rows = E.rows - 2;
+    int text_rows = E.rows - (SHOW_STATUSBAR ? 2 : 0);
     for (int i = 0; i < text_rows; i++) move_up();
 }
 
 static void move_page_down(void) {
-    int text_rows = E.rows - 2;
+    int text_rows = E.rows - (SHOW_STATUSBAR ? 2 : 0);
     for (int i = 0; i < text_rows; i++) move_down();
 }
 
