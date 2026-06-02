@@ -59,6 +59,10 @@
 #include <ctype.h>
 #include <errno.h>
 
+// --- Version ---
+
+#define EDITRON_VERSION "0.1.0"
+
 // --- Constants / Settings ---
 
 int TAB_WIDTH = 4;          // spaces per Tab keypress
@@ -632,22 +636,40 @@ static void init_ncurses(void) {
     curs_set(CURSOR_STYLE);
 }
 
-int main(int argc, char *argv[]) {
-    memset(&E, 0, sizeof E);
+// Handles Args. Returns 1 if not opening text editor, otherwise 0.
+int handle_args(int argc, char *argv[]) {
+    if (argc < 2)
+        set_status("ned - no file. Ctrl-S to save, Ctrl-Q to quit.");
 
-    load_config();
+    // editron [-v | --version]
+    if (argc >= 2 && (strcmp(argv[1], "-v") == 0 || strcmp(argv[1], "--version") == 0)) {
+        printf("Editron version %s\n", EDITRON_VERSION);
+        return 1;
+    }
 
-    gap_init(&E.text);
-
-    if (argc >= 2) {
+    // editron [filename]
+    else if (argc == 2) {
         strncpy(E.filename, argv[1], sizeof E.filename - 1);
         if (!load_file(E.filename))
             set_status("New file: \"%s\"", E.filename);
         else
             set_status("Opened \"%s\"", E.filename);
-    } else {
-        set_status("ned - no file. Ctrl-S to save, Ctrl-Q to quit.");
+        return 0;
     }
+
+    printf("Incorrect Usage. editron [filename | -v]\n");
+    return 0;
+}
+
+int main(int argc, char *argv[]) {
+    // If handle args True exit early as it a flag to not enter text mode.
+    if (handle_args(argc, argv)) return 0; 
+
+    memset(&E, 0, sizeof E);
+
+    load_config();
+
+    gap_init(&E.text);
 
     init_ncurses();
     getmaxyx(stdscr, E.rows, E.cols);
