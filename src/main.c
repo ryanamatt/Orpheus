@@ -1,7 +1,7 @@
 /*
  * Editron — a small ncurses text editor
  *
- * Usage: Editorn [file]
+ * Usage: editron [file]
  *
  * Keybindings
  * -----------
@@ -17,6 +17,14 @@
  * Ctrl-E   go to end of line
  * Tab      insert 4 spaces
  * Backspace / Delete
+ * 
+ * Optional Settings placed in ~/.editronrc
+ * -----------
+ * Works as follows with # as comments:
+ * setting=value
+ * 
+ * tab_width: int Sets the number of spaces to tab over 
+ * show_line_numbers: int If 0 does not show line numbers. Otherwise Shows Line Numbers.
  */
 
 #include <ncurses.h>
@@ -26,9 +34,12 @@
 #include <ctype.h>
 #include <errno.h>
 
-// --- Constants ---
+// --- Constants / Settings ---
 
-#define TAB_WIDTH   4
+// #define TAB_WIDTH   4
+int TAB_WIDTH = 4;
+int SHOW_LINE_NUMBERS = 1;
+
 #define MAX_STATUS  512
 #define CHUNK       64 // gap-buffer growth step (in chars)
 
@@ -99,6 +110,34 @@ static void gap_insert(Gap *g, int pos, char c) {
 static void gap_delete(Gap *g, int pos) {
     gap_move(g, pos);
     if (g->gap_end < g->size) g->gap_end++;
+}
+
+// --- Load Configurations ---
+
+void load_config(void) {
+    char path[512];
+    snprintf(path, sizeof(path), "%s/.editronrc", getenv("HOME"));
+
+    FILE *pfile = fopen(path, "r");
+    if (!pfile) return; // no config file use defaults
+
+    char line[128];
+    while (fgets(line, sizeof(line), pfile)) {
+        if (line[0] == '#' || line[0] == '\n') continue;
+
+        char *key = strtok(line, "=");
+        char *val = strtok(NULL, "=");
+
+        if (key && val) {
+            if (strcmp(key, "tab_width") == 0) {
+                TAB_WIDTH = atoi(val);
+            }
+
+            if (strcmp(key, "show_line_numbers") == 0) {
+                SHOW_LINE_NUMBERS = atoi(val);
+            }
+        }
+    }
 }
 
 // --- Editor State ---
@@ -223,13 +262,13 @@ static void draw_rows(void) {
 
         // line number gutter
         attron(COLOR_PAIR(CP_LNUM));
-        if (ln < total) printw("%4d ", ln + 1);
+        if ((ln < total) && SHOW_LINE_NUMBERS) printw("%4d ", ln + 1);
         else            printw("   ~ ");
         attroff(COLOR_PAIR(CP_LNUM));
 
         attron(COLOR_PAIR(CP_NORMAL));
         if (ln < total) {
-            int s   = line_start(ln);
+            int s = line_start(ln);
             int end = s + line_len(ln);
             int col = 0;
             for (int i = s; i < end; i++) {
@@ -511,6 +550,9 @@ static void init_ncurses(void) {
 
 int main(int argc, char *argv[]) {
     memset(&E, 0, sizeof E);
+
+    load_config();
+
     gap_init(&E.text);
 
     if (argc >= 2) {
