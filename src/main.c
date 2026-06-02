@@ -371,7 +371,7 @@ static void draw_statusbar(void) {
 static void draw_cmdbar(void) {
     attron(COLOR_PAIR(CP_CMDBAR));
     move(E.rows - 1, 0);
-    printw(" ^S Save  ^Q Quit  ^F Find  ^G Go-To  ^K Cut  ^U Paste  ^D Del-Ln ^H Hide");
+    printw(" ^S Save  ^Q Quit  ^F Find  ^G Go-To  ^K Cut  ^U Paste  ^D Del-Ln  ^W Hide");
     clrtoeol();
     attroff(COLOR_PAIR(CP_CMDBAR));
 
@@ -510,6 +510,11 @@ static void delete_line(void) {
     if (E.cursor > gap_len(&E.text)) E.cursor = gap_len(&E.text);
     E.dirty  = 1;
     set_status("Deleted line");
+}
+
+static void toggle_status(void) {
+    SHOW_STATUSBAR = !SHOW_STATUSBAR;
+    refresh_screen();
 }
 
 // --- Movement ---
@@ -681,10 +686,13 @@ int main(int argc, char *argv[]) {
             goto_line();
             break;
 
-        // Cut / Paste / Delete / Hide
+        // Cut / Paste / Delete
         case ('k' & 0x1f): cut_line();   break;
         case ('u' & 0x1f): paste_line(); break;
         case ('d' & 0x1f): delete_line(); break;
+
+        // Toggle Status
+        case ('w' & 0x1f): toggle_status(); break;
 
         // Movement
         case KEY_UP:         move_up();        break;
