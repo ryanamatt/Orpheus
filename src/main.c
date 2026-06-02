@@ -250,6 +250,7 @@ typedef struct {
     int   line_count;           // total newlines + 1 (kept incrementally)
     int   word_count;           // kept incrementally via stats_dirty
     int   stats_dirty;          // non-zero -> word_count needs a full rescan
+    int   current_line;         // 0-based line the cursor is on (Optimization 4)
 } Editor;
 
 static Editor E;
@@ -257,11 +258,37 @@ static Editor E;
 // --- helpers ---
 
 // count newlines before logical position pos  ->  line number (0-based)
+// Still used for arbitrary positions (search, goto, auto-indent …).
 static int pos_to_line(int pos) {
     int ln = 0;
     for (int i = 0; i < pos; i++)
         if (gap_char(&E.text, i) == '\n') ln++;
     return ln;
+}
+ 
+/*
+ * keep E.current_line in sync with E.cursor.
+ *
+ * Avoid a full O(n) scan whenever possible:
+ *   • Moving right by 1: if the character we stepped over was '\n', +1.
+ *   • Moving left  by 1: if the character we stepped back over was '\n', -1.
+ *   • Larger jumps (up/down/page/home/end/goto) call pos_to_line() once
+ *     and cache the result, which is still only one scan per key-press.
+ */
+static void update_current_line_delta(int old_cursor, int new_cursor) {
+    int delta = new_cursor - old_cursor;
+    if (delta == 1) {
+        if (old_cursor < gap_len(&E.text) &&
+            gap_char(&E.text, old_cursor) == '\n')
+            E.current_line++;
+    } else if (delta == -1) {
+        if (new_cursor >= 0 && new_cursor < gap_len(&E.text) &&
+            gap_char(&E.text, new_cursor) == '\n')
+            E.current_line--;
+    } else {
+        // arbitrary jump — full scan, but only once per key-press
+        E.current_line = pos_to_line(new_cursor);
+    }
 }
 
 // return logical position of start of line ln
@@ -339,7 +366,7 @@ static void rebuild_line_count(void) {
 
 // visual column for cursor on its line (tabs expanded)
 static int cursor_vcol(void) {
-    int ln  = pos_to_line(E.cursor);
+    int ln  = E.current_line;
     int s   = line_start(ln);
     int col = 0;
     for (int i = s; i < E.cursor; i++) {
@@ -367,6 +394,7 @@ static int load_file(const char *path) {
         gap_insert(&E.text, gap_len(&E.text), (char)c);
     fclose(f);
     rebuild_line_count();   // initialise cached line_count + stats_dirty
+    E.current_line = 0;
     return 1;
 }
 
@@ -388,7 +416,7 @@ static int save_file(void) {
 // --- display ---
 
 static void adjust_scroll(void) {
-    int cur_line = pos_to_line(E.cursor);
+    int cur_line = E.current_line;
     int vcol = cursor_vcol();
     int text_rows = E.rows - (SHOW_STATUSBAR ? 2 : 0);   // status + command bar
 
@@ -448,7 +476,7 @@ static void draw_rows(void) {
 static void draw_statusbar(void) {
     attron(COLOR_PAIR(CP_STATUS) | A_BOLD);
     move(E.rows - 2, 0);
-    int ln = pos_to_line(E.cursor);
+    int ln = E.current_line;
     int col = cursor_vcol();
 
     int chars = count_chars();
@@ -490,7 +518,7 @@ static void draw_cmdbar(void) {
 
 static void refresh_screen(void) {
     adjust_scroll();
-    int ln = pos_to_line(E.cursor);
+    int ln = E.current_line;
     int vcol = cursor_vcol();
 
     draw_rows();
@@ -560,6 +588,7 @@ static void do_find(void) {
         if (match) {
             E.cursor = pos;
             set_status("Found \"%s\"", term);
+            E.current_line = pos_to_line(pos);
             return;
         }
     }
@@ -569,7 +598,7 @@ static void do_find(void) {
 // --- Cut & Paste ---
 
 static void cut_line(void) {
-    int ln = pos_to_line(E.cursor);
+    int ln = E.current_line;
     int s = line_start(ln);
     int len = line_len(ln);
     int end = s + len;
@@ -588,12 +617,13 @@ static void cut_line(void) {
     E.cursor = s;
     E.dirty  = 1;
     rebuild_line_count();
+    E.current_line = pos_to_line(E.cursor);
     set_status("Cut line");
 }
 
 static void paste_line(void) {
     if (!E.cb_len) { set_status("Clipboard empty"); return; }
-    int ln = pos_to_line(E.cursor);
+    int ln = E.current_line;
     int s  = line_start(ln);
     // insert clipboard + newline
     for (int i = 0; i < E.cb_len; i++) gap_insert(&E.text, s + i, E.clipboard[i]);
@@ -601,11 +631,12 @@ static void paste_line(void) {
     E.cursor = s;
     E.dirty  = 1;
     rebuild_line_count();
+    E.current_line = pos_to_line(E.cursor);
     set_status("Pasted");
 }
 
 static void delete_line(void) {
-    int ln = pos_to_line(E.cursor);
+    int ln = E.current_line;
     int s = line_start(ln);
     int len = line_len(ln);
     int end = s + len;
@@ -615,6 +646,7 @@ static void delete_line(void) {
     if (E.cursor > gap_len(&E.text)) E.cursor = gap_len(&E.text);
     E.dirty  = 1;
     rebuild_line_count();
+    E.current_line = pos_to_line(E.cursor);
     set_status("Deleted line");
 }
 
@@ -626,38 +658,48 @@ static void toggle_status(void) {
 // --- Movement ---
 
 static void move_up(void) {
-    int ln = pos_to_line(E.cursor);
-    if (ln == 0) { E.cursor = 0; return; }
+    int ln = E.current_line;
+    if (ln == 0) { E.cursor = 0; E.current_line = 0; return; }
     int vcol = cursor_vcol();
     int s    = line_start(ln - 1);
     int l    = line_len(ln - 1);
     E.cursor = s + (vcol < l ? vcol : l);
+    E.current_line = ln - 1;
 }
 
 static void move_down(void) {
-    int ln = pos_to_line(E.cursor);
+    int ln = E.current_line;
     if (ln >= total_lines() - 1) return;
     int vcol = cursor_vcol();
     int s    = line_start(ln + 1);
     int l    = line_len(ln + 1);
     E.cursor = s + (vcol < l ? vcol : l);
+    E.current_line = ln + 1;
 }
 
 static void move_left(void) {
-    if (E.cursor > 0) E.cursor--;
+    if (E.cursor > 0) {
+        int old = E.cursor;
+        E.cursor--;
+        update_current_line_delta(old, E.cursor);
+    }
 }
-
+ 
 static void move_right(void) {
-    if (E.cursor < gap_len(&E.text)) E.cursor++;
+    if (E.cursor < gap_len(&E.text)) {
+        int old = E.cursor;
+        E.cursor++;
+        update_current_line_delta(old, E.cursor);
+    }
 }
 
 static void move_line_start(void) {
-    int ln = pos_to_line(E.cursor);
+    int ln = E.current_line;
     E.cursor = line_start(ln);
 }
 
 static void move_line_end(void) {
-    int ln = pos_to_line(E.cursor);
+    int ln = E.current_line;
     E.cursor = line_start(ln) + line_len(ln);
 }
 
@@ -680,6 +722,7 @@ static void goto_line(void) {
     if (ln >= tot) ln = tot - 1;
     int s = line_start(ln);
     E.cursor = s;
+    E.current_line = ln;
     set_status("Jumped to line %d", ln + 1);
 }
 
@@ -800,6 +843,7 @@ int main(int argc, char *argv[]) {
     E.line_count   = 1;
     E.word_count   = 0;
     E.stats_dirty  = 0;
+    E.current_line = 0;
 
     // If handle args True exit early as it a flag to not enter text mode.
     if (handle_args(argc, argv)) return 0; 
@@ -872,7 +916,9 @@ int main(int argc, char *argv[]) {
                     gap_shift_left(&E.text);
                 else
                     gap_delete(&E.text, E.cursor - 1);
+                int old = E.cursor;
                 E.cursor--;
+                update_current_line_delta(old, E.cursor);
                 update_stats(deleted, -1);
                 E.dirty = 1;
             }
@@ -899,9 +945,10 @@ int main(int argc, char *argv[]) {
             gap_insert(&E.text, E.cursor, '\n');
             E.cursor++;
             update_stats('\n', +1);
+            E.current_line++;
 
             if (AUTO_INDENT) {
-                int ln = pos_to_line(E.cursor - 1);
+                int ln = E.current_line - 1;
                 int s = line_start(ln);
                 int end = s + line_len(ln);
                 // Count leading whitespace/tabs on the line that was just left
