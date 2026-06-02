@@ -40,6 +40,13 @@
  * cursor_style: int
  *   Controls the terminal cursor shape passed to curs_set().
  *     0 = invisible, 1 = normal (default), 2 = very visible / block.
+ * 
+ * color_scheme: string
+ *   Built-in colour theme for the UI chrome.
+ *     default  — system default colours (no change)
+ *     dark     — white text on dark backgrounds
+ *     light    — black text on light backgrounds
+ *     mono     — disables colour entirely (A_REVERSE for highlights)
  */
 
 #include <ncurses.h>
@@ -57,6 +64,7 @@ int SHOW_LINE_NUMBERS = 1;  // show line-number gutter
 int AUTO_INDENT = 1;        // copy leading whitespace on Enter
 int SHOW_STATUSBAR = 1;     // show the status/command bar row
 int CURSOR_STYLE = 1;       // 0=invisible 1=normal 2=block
+char COLOR_SCHEME[32] = "default"; // "default" | "dark" | "light" | "mono"
 
 #define MAX_STATUS  512
 #define CHUNK       64 // gap-buffer growth step (in chars)
@@ -165,6 +173,12 @@ void load_config(void) {
 
             else if (strcmp(key, "cursor_style") == 0) {
                 CURSOR_STYLE = atoi(val);
+            }
+
+            else if (strcmp(key, "color_scheme") == 0) {
+                val[strcspn(val, "\r\n")] = 0;
+                strncpy(COLOR_SCHEME, val, sizeof(COLOR_SCHEME - 1));
+                COLOR_SCHEME[sizeof(COLOR_SCHEME) - 1] = '\0';
             }
         }
     }
@@ -368,7 +382,7 @@ static void refresh_screen(void) {
         draw_cmdbar();
     }
 
-    /* position real cursor */
+    // position real cursor
     move(ln - E.row_off, 5 + vcol - E.col_off);
     refresh();
 }
@@ -569,14 +583,30 @@ static void init_ncurses(void) {
     keypad(stdscr, TRUE);
     set_escdelay(50);
 
-    if (has_colors()) {
+    if (has_colors() && strcmp(COLOR_SCHEME, "mono") != 0) {
         start_color();
         use_default_colors();
-        init_pair(CP_NORMAL, -1, -1);
-        init_pair(CP_STATUS, -1, -1);
-        init_pair(CP_CMDBAR, -1, -1);
-        init_pair(CP_LNUM, COLOR_YELLOW, -1);
-        init_pair(CP_SEARCH, COLOR_BLACK, COLOR_YELLOW);
+ 
+        if (strcmp(COLOR_SCHEME, "dark") == 0) {
+            init_pair(CP_NORMAL, COLOR_WHITE,  COLOR_BLACK);
+            init_pair(CP_STATUS, COLOR_BLACK,  COLOR_WHITE);
+            init_pair(CP_CMDBAR, COLOR_BLACK,  COLOR_CYAN);
+            init_pair(CP_LNUM,   COLOR_YELLOW, COLOR_BLACK);
+            init_pair(CP_SEARCH, COLOR_BLACK,  COLOR_YELLOW);
+        } else if (strcmp(COLOR_SCHEME, "light") == 0) {
+            init_pair(CP_NORMAL, COLOR_BLACK,  COLOR_WHITE);
+            init_pair(CP_STATUS, COLOR_WHITE,  COLOR_BLUE);
+            init_pair(CP_CMDBAR, COLOR_WHITE,  COLOR_BLUE);
+            init_pair(CP_LNUM,   COLOR_BLUE,   COLOR_WHITE);
+            init_pair(CP_SEARCH, COLOR_WHITE,  COLOR_RED);
+        } else {
+            // default: use terminal's own colours
+            init_pair(CP_NORMAL, -1,           -1);
+            init_pair(CP_STATUS, -1,           -1);
+            init_pair(CP_CMDBAR, -1,           -1);
+            init_pair(CP_LNUM,   COLOR_YELLOW, -1);
+            init_pair(CP_SEARCH, COLOR_BLACK,  COLOR_YELLOW);
+        }
     }
 
     curs_set(CURSOR_STYLE);
