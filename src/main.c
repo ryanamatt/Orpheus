@@ -588,7 +588,8 @@ static void do_find(void) {
         E.status[0] = '\0';
         return;
     }
-    strncpy(E.search_term, term, sizeof E.search_term - 1);
+    strncpy(E.search_term, term, sizeof(E.search_term) - 1);
+    E.search_term[sizeof(E.search_term) - 1] = '\0'; // Manually ensure null termination
     E.last_search_pos = E.cursor;
 
     int len = gap_len(&E.text);
@@ -837,7 +838,7 @@ int handle_args(int argc, char *argv[]) {
 
     // orp [filename]
     else if (argc == 2) {
-        strncpy(E.filename, argv[1], sizeof E.filename - 1);
+        strncpy(E.filename, argv[1], sizeof(E.filename - 1));
         if (!load_file(E.filename))
             set_status("New file: \"%s\"", E.filename);
         else
@@ -886,7 +887,8 @@ int main(int argc, char *argv[]) {
             if (!E.filename[0]) {
                 char buf[256];
                 if (mini_input("Save as: ", buf, sizeof buf)) {
-                    strncpy(E.filename, buf, sizeof E.filename - 1);
+                    strncpy(E.filename, buf, sizeof(E.filename));
+                    E.search_term[sizeof(E.search_term) - 1] = '\0'; // Manually ensure null termination
                     save_file();
                 }
             } else save_file();

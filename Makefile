@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -std=c17 -Iinclude -Wall
+CFLAGS = -std=c17 -Iinclude -Wall -O3
 DEPFLAGS = -MMD -MP
 CFLAGS += $(DEPFLAGS)
 
