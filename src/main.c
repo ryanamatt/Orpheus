@@ -122,14 +122,43 @@ static void gap_grow(Gap *g, int need) {
     g->size     = nsz;
 }
 
+/* 
+ * lightweight single-character gap shifts.
+ * gap_shift_right: moves gap one position to the right (copies 1 byte)
+ * gap_shift_left:  moves gap one position to the left  (copies 1 byte)
+ *
+ * Defined before gap_move so gap_move can call them inline for ±1 moves.
+ */
+static void gap_shift_right(Gap *g) {
+    if (g->gap_end >= g->size) return;
+    g->buf[g->gap_start] = g->buf[g->gap_end];
+    g->gap_start++;
+    g->gap_end++;
+}
+ 
+static void gap_shift_left(Gap *g) {
+    if (g->gap_start <= 0) return;
+    g->gap_end--;
+    g->gap_start--;
+    g->buf[g->gap_end] = g->buf[g->gap_start];
+}
+
 static void gap_move(Gap *g, int pos) {
     if (pos == g->gap_start) return;
     if (pos < g->gap_start) {
+        if (g->gap_start - pos == 1) {
+            gap_shift_left(g);
+            return;
+        }
         int n = g->gap_start - pos;
         memmove(g->buf + g->gap_end - n, g->buf + pos, n);
         g->gap_start -= n;
         g->gap_end   -= n;
     } else {
+        if (pos - g->gap_start == 1) {
+            gap_shift_right(g);
+            return;
+        }
         int n = pos - g->gap_start;
         memmove(g->buf + g->gap_start, g->buf + g->gap_end, n);
         g->gap_start += n;
@@ -836,8 +865,14 @@ int main(int argc, char *argv[]) {
         case 127:
         case '\b':
             if (E.cursor > 0) {
-                gap_delete(&E.text, E.cursor - 1);
+                char deleted = gap_char(&E.text, E.cursor - 1);
+                // if gap is already at cursor, shift left by 1 byte
+                if (E.text.gap_start == E.cursor)
+                    gap_shift_left(&E.text);
+                else
+                    gap_delete(&E.text, E.cursor - 1);
                 E.cursor--;
+                update_stats(deleted, -1);
                 E.dirty = 1;
             }
             break;
