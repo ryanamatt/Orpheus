@@ -32,9 +32,14 @@
  * auto_indent: int
  *   If non-zero, pressing Enter copies the leading whitespace of the current
  *   line to the new line automatically. Default: 1.
+ * 
  * show_statusbar: int
  *   If 0, hides the bottom status/command bar, giving one extra row of text.
  *   Default: 1.
+ *
+ * cursor_style: int
+ *   Controls the terminal cursor shape passed to curs_set().
+ *     0 = invisible, 1 = normal (default), 2 = very visible / block.
  */
 
 #include <ncurses.h>
@@ -50,7 +55,8 @@
 int TAB_WIDTH = 4;          // spaces per Tab keypress
 int SHOW_LINE_NUMBERS = 1;  // show line-number gutter
 int AUTO_INDENT = 1;        // copy leading whitespace on Enter
-int SHOW_STATUSBAR = 1;    // show the status/command bar row
+int SHOW_STATUSBAR = 1;     // show the status/command bar row
+int CURSOR_STYLE = 1;       // 0=invisible 1=normal 2=block
 
 #define MAX_STATUS  512
 #define CHUNK       64 // gap-buffer growth step (in chars)
@@ -155,6 +161,10 @@ void load_config(void) {
 
             else if (strcmp(key, "show_statusbar") == 0) {
                 SHOW_STATUSBAR = atoi(val);
+            }
+
+            else if (strcmp(key, "cursor_style") == 0) {
+                CURSOR_STYLE = atoi(val);
             }
         }
     }
@@ -568,6 +578,8 @@ static void init_ncurses(void) {
         init_pair(CP_LNUM, COLOR_YELLOW, -1);
         init_pair(CP_SEARCH, COLOR_BLACK, COLOR_YELLOW);
     }
+
+    curs_set(CURSOR_STYLE);
 }
 
 int main(int argc, char *argv[]) {
