@@ -1,7 +1,7 @@
 /*
- * Editron - a small ncurses text editor
+ * Orpheus - a small ncurses text editor
  *
- * Usage: editron [file]
+ * Usage: orp [file]
  *
  * Keybindings
  * -----------
@@ -17,7 +17,7 @@
  * Ctrl-E   go to end of line
  * Ctrl+W   Toggle Hiding/Showing the Status Bar
  * 
- * Optional Settings placed in ~/.editronrc
+ * Optional Settings placed in ~/.orpheusrc
  * -----------
  * Works as follows with # as comments:
  * setting=value
@@ -63,7 +63,7 @@
 
 // --- Version ---
 
-#define EDITRON_VERSION "0.1.0"
+#define ORPHEUS_VERSION "0.1.0"
 
 // --- Constants / Settings ---
 
@@ -152,7 +152,7 @@ static void gap_delete(Gap *g, int pos) {
 
 void load_config(void) {
     char path[512];
-    snprintf(path, sizeof(path), "%s/.editronrc", getenv("HOME"));
+    snprintf(path, sizeof(path), "%s/.orpheusrc", getenv("HOME"));
 
     FILE *pfile = fopen(path, "r");
     if (!pfile) return; // no config file use defaults
@@ -646,14 +646,14 @@ static void init_ncurses(void) {
 // Handles Args. Returns 1 if not opening text editor, otherwise 0.
 int handle_args(int argc, char *argv[]) {
     if (argc < 2) {
-        set_status("editron - no file. Ctrl-S to save, Ctrl-Q to quit.");
+        set_status("orpheus - no file. Ctrl-S to save, Ctrl-Q to quit.");
         return 0;
     }
 
-    // editron [-h | --help]
+    // orp [-h | --help]
     if (argc == 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
-        printf("Editron version %s\n", EDITRON_VERSION);
-        printf("Usage: editron [file]\n\n");
+        printf("Orpheus version %s\n", ORPHEUS_VERSION);
+        printf("Usage: orp [file]\n\n");
         printf("Options:\n");
         printf("  -h, --help        Show this help message\n");
         printf("  -v, --version     Show version information\n\n");
@@ -674,13 +674,13 @@ int handle_args(int argc, char *argv[]) {
         return 1;
     }
 
-    // editron [-v | --version]
+    // orp [-v | --version]
     if (argc == 2 && (strcmp(argv[1], "-v") == 0 || strcmp(argv[1], "--version") == 0)) {
-        printf("Editron version %s\n", EDITRON_VERSION);
+        printf("Orpheus version %s\n", ORPHEUS_VERSION);
         return 1;
     }
 
-    // editron [filename]
+    // orp [filename]
     else if (argc == 2) {
         strncpy(E.filename, argv[1], sizeof E.filename - 1);
         if (!load_file(E.filename))
@@ -691,9 +691,9 @@ int handle_args(int argc, char *argv[]) {
     }
 
     printf("Incorrect Usage. Try: \n" \
-        "editron\n" \
-        "editron [--help | --version]\n"
-        "editron [filename]\n");
+        "orp\n" \
+        "orp [--help | --version]\n"
+        "orp [filename]\n");
     return 1;
 }
 

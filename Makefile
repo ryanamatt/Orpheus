@@ -1,13 +1,13 @@
 CC = gcc
 CFLAGS = -std=c17 -Iinclude -Wall
 DEPFLAGS = -MMD -MP
-CFLAGS += DEPFLAGS
+CFLAGS += $(DEPFLAGS)
 
 LIBS = -lncurses
 
 SRC_DIR = src
 BUILD_DIR = build
-TARGET  = editron
+TARGET  = orp
 
 PREFIX ?= /usr/local
 BINDIR = $(PREFIX)/bin
