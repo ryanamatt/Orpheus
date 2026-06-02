@@ -501,7 +501,8 @@ static void refresh_screen(void) {
 
     // position real cursor
     move(ln - E.row_off, GUTTER_WIDTH + vcol - E.col_off);
-    refresh();
+    wnoutrefresh(stdscr);
+    doupdate();
 }
 
 // --- Mini Input Line (search / goto) ---
