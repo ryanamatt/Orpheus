@@ -1,11 +1,11 @@
 /*
- * Editron — a small ncurses text editor
+ * Editron - a small ncurses text editor
  *
  * Usage: editron [file]
  *
  * Keybindings
  * -----------
- * Arrow keys / PgUp / PgDn / Home / End  — navigation
+ * Arrow keys / PgUp / PgDn / Home / End  - navigation
  * Ctrl-S   save
  * Ctrl-Q   quit (warns on unsaved changes)
  * Ctrl-F   find  (Enter to cycle, Esc to cancel)
@@ -43,10 +43,10 @@
  * 
  * color_scheme: string
  *   Built-in colour theme for the UI chrome.
- *     default  — system default colours (no change)
- *     dark     — white text on dark backgrounds
- *     light    — black text on light backgrounds
- *     mono     — disables colour entirely (A_REVERSE for highlights)
+ *     default  - system default colours (no change)
+ *     dark     - white text on dark backgrounds
+ *     light    - black text on light backgrounds
+ *     mono     - disables colour entirely (A_REVERSE for highlights)
  * 
  * gutter_width: int
  *   The number of spaces for the width of the line number gutter. Default 5.
@@ -277,7 +277,7 @@ static int load_file(const char *path) {
 
 static int save_file(void) {
     if (!E.filename[0]) {
-        set_status("No filename — use Ctrl-W to set one");
+        set_status("No filename - use Ctrl-W to set one");
         return 0;
     }
     FILE *f = fopen(E.filename, "w");
@@ -646,7 +646,7 @@ int main(int argc, char *argv[]) {
         else
             set_status("Opened \"%s\"", E.filename);
     } else {
-        set_status("ned — no file. Ctrl-S to save, Ctrl-Q to quit.");
+        set_status("ned - no file. Ctrl-S to save, Ctrl-Q to quit.");
     }
 
     init_ncurses();
