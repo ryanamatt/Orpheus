@@ -698,15 +698,12 @@ int handle_args(int argc, char *argv[]) {
 }
 
 int main(int argc, char *argv[]) {
-    printf("Args count: %d\n", argc);
+    memset(&E, 0, sizeof E);
+    load_config();
+    gap_init(&E.text);
+
     // If handle args True exit early as it a flag to not enter text mode.
     if (handle_args(argc, argv)) return 0; 
-
-    memset(&E, 0, sizeof E);
-
-    load_config();
-
-    gap_init(&E.text);
 
     init_ncurses();
     getmaxyx(stdscr, E.rows, E.cols);
