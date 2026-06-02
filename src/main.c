@@ -217,13 +217,17 @@ typedef struct {
     int   cb_len;
     int   last_search_pos;      // for repeated Ctrl-F search                  
     char  search_term[256];
+
+    int   line_count;           // total newlines + 1 (kept incrementally)
+    int   word_count;           // kept incrementally via stats_dirty
+    int   stats_dirty;          // non-zero -> word_count needs a full rescan
 } Editor;
 
 static Editor E;
 
 // --- helpers ---
 
-// count newlines before logical position pos  →  line number (0-based)
+// count newlines before logical position pos  ->  line number (0-based)
 static int pos_to_line(int pos) {
     int ln = 0;
     for (int i = 0; i < pos; i++)
@@ -246,12 +250,9 @@ static int line_len(int ln) {
     return e - s;
 }
 
-// total number of lines
+// total number of lines — O(1): return cached value
 static int total_lines(void) {
-    int n = 1, len = gap_len(&E.text);
-    for (int i = 0; i < len; i++)
-        if (gap_char(&E.text, i) == '\n') n++;
-    return n;
+    return E.line_count;
 }
 
 // Count total characters (including newlines)
@@ -259,21 +260,52 @@ static int count_chars(void) {
     return gap_len(&E.text);
 }
 
-// Count words (space/tab/newline delimited)
-static int count_words(void) {
-    int words = 0;
-    int in_word = 0;
-    int len = gap_len(&E.text);
+// Full O(n) word rescan — only called when stats_dirty is set
+static int count_words_full(void) {
+    int words = 0, in_word = 0, len = gap_len(&E.text);
     for (int i = 0; i < len; i++) {
         char c = gap_char(&E.text, i);
-        if (isspace(c)) {
-            in_word = 0;
-        } else if (!in_word) {
-            in_word = 1;
-            words++;
-        }
+        if (isspace(c)) in_word = 0;
+        else if (!in_word) { in_word = 1; words++; }
     }
     return words;
+}
+
+// Return cached word count, rescanning only when the buffer changed
+static int count_words(void) {
+    if (E.stats_dirty) {
+        E.word_count  = count_words_full();
+        E.stats_dirty = 0;
+    }
+    return E.word_count;
+}
+
+/*
+ * Incremental stat update called on every insert/delete.
+ *
+ * c        : the character that was inserted (+1) or deleted (-1 delta).
+ * delta    : +1 for insert, -1 for delete.
+ *
+ * line_count is updated exactly here so total_lines() is always O(1).
+ * word_count is harder to do perfectly incrementally (word boundaries
+ * depend on neighbours), so we set stats_dirty and let count_words()
+ * do one full rescan on the next draw — still only once per frame.
+ */
+static void update_stats(char c, int delta) {
+    if (c == '\n') E.line_count += delta;
+    E.stats_dirty = 1;
+}
+
+/*
+ * Rebuild line_count from scratch.  Called after load_file() and
+ * whenever a bulk edit (cut/paste/delete-line) is done.
+ */
+static void rebuild_line_count(void) {
+    int n = 1, len = gap_len(&E.text);
+    for (int i = 0; i < len; i++)
+        if (gap_char(&E.text, i) == '\n') n++;
+    E.line_count  = n;
+    E.stats_dirty = 1; // force word rescan on next draw
 }
 
 // visual column for cursor on its line (tabs expanded)
@@ -305,6 +337,7 @@ static int load_file(const char *path) {
     while ((c = fgetc(f)) != EOF)
         gap_insert(&E.text, gap_len(&E.text), (char)c);
     fclose(f);
+    rebuild_line_count();   // initialise cached line_count + stats_dirty
     return 1;
 }
 
@@ -327,13 +360,13 @@ static int save_file(void) {
 
 static void adjust_scroll(void) {
     int cur_line = pos_to_line(E.cursor);
-    int vcol     = cursor_vcol();
+    int vcol = cursor_vcol();
     int text_rows = E.rows - (SHOW_STATUSBAR ? 2 : 0);   // status + command bar
 
     if (cur_line < E.row_off)               E.row_off = cur_line;
     if (cur_line >= E.row_off + text_rows)  E.row_off = cur_line - text_rows + 1;
-    if (vcol     < E.col_off)               E.col_off = vcol;
-    if (vcol     >= E.col_off + E.cols - 6) E.col_off = vcol - (E.cols - 6) + 1;
+    if (vcol < E.col_off)                   E.col_off = vcol;
+    if (vcol >= E.col_off + E.cols - 6)     E.col_off = vcol - (E.cols - 6) + 1;
 }
 
 static void draw_rows(void) {
@@ -386,7 +419,7 @@ static void draw_rows(void) {
 static void draw_statusbar(void) {
     attron(COLOR_PAIR(CP_STATUS) | A_BOLD);
     move(E.rows - 2, 0);
-    int ln  = pos_to_line(E.cursor);
+    int ln = pos_to_line(E.cursor);
     int col = cursor_vcol();
 
     int chars = count_chars();
@@ -428,7 +461,7 @@ static void draw_cmdbar(void) {
 
 static void refresh_screen(void) {
     adjust_scroll();
-    int ln   = pos_to_line(E.cursor);
+    int ln = pos_to_line(E.cursor);
     int vcol = cursor_vcol();
 
     draw_rows();
@@ -519,11 +552,12 @@ static void cut_line(void) {
     E.clipboard[clen] = '\0';
     E.cb_len = clen;
 
-    // delete line content + newline 
+    // delete line content + newline
     int del = len + (end < gap_len(&E.text) ? 1 : 0);
     for (int i = 0; i < del; i++) gap_delete(&E.text, s);
     E.cursor = s;
     E.dirty  = 1;
+    rebuild_line_count();
     set_status("Cut line");
 }
 
@@ -536,12 +570,13 @@ static void paste_line(void) {
     gap_insert(&E.text, s + E.cb_len, '\n');
     E.cursor = s;
     E.dirty  = 1;
+    rebuild_line_count();
     set_status("Pasted");
 }
 
 static void delete_line(void) {
-    int ln  = pos_to_line(E.cursor);
-    int s   = line_start(ln);
+    int ln = pos_to_line(E.cursor);
+    int s = line_start(ln);
     int len = line_len(ln);
     int end = s + len;
     int del = len + (end < gap_len(&E.text) ? 1 : 0);
@@ -549,6 +584,7 @@ static void delete_line(void) {
     E.cursor = s;
     if (E.cursor > gap_len(&E.text)) E.cursor = gap_len(&E.text);
     E.dirty  = 1;
+    rebuild_line_count();
     set_status("Deleted line");
 }
 
@@ -730,6 +766,10 @@ int main(int argc, char *argv[]) {
     memset(&E, 0, sizeof E);
     load_config();
     gap_init(&E.text);
+    // Initialise cached statistics (empty buffer = 1 line, 0 words)
+    E.line_count   = 1;
+    E.word_count   = 0;
+    E.stats_dirty  = 0;
 
     // If handle args True exit early as it a flag to not enter text mode.
     if (handle_args(argc, argv)) return 0; 
@@ -813,6 +853,7 @@ int main(int argc, char *argv[]) {
             for (int i = 0; i < TAB_WIDTH; i++) {
                 gap_insert(&E.text, E.cursor, ' ');
                 E.cursor++;
+                update_stats(' ', +1);
             }
             E.dirty = 1;
             break;
@@ -821,12 +862,13 @@ int main(int argc, char *argv[]) {
         case KEY_ENTER:
             gap_insert(&E.text, E.cursor, '\n');
             E.cursor++;
+            update_stats('\n', +1);
 
             if (AUTO_INDENT) {
                 int ln = pos_to_line(E.cursor - 1);
                 int s = line_start(ln);
                 int end = s + line_len(ln);
-                // Count Leading White spaces/tabs on the line that was just left
+                // Count leading whitespace/tabs on the line that was just left
                 int ws = s;
                 while (ws < end && (gap_char(&E.text, ws) == ' ' || gap_char(&E.text, ws) == '\t'))
                     ws++;
@@ -835,6 +877,7 @@ int main(int argc, char *argv[]) {
                     char wc = gap_char(&E.text, s + i);
                     gap_insert(&E.text, E.cursor, wc);
                     E.cursor++;
+                    update_stats(wc, +1);
                 }
             }
             E.dirty = 1;
@@ -844,6 +887,7 @@ int main(int argc, char *argv[]) {
             if (c >= 32 && c < 256 && c != 127) {
                 gap_insert(&E.text, E.cursor, (char)c);
                 E.cursor++;
+                update_stats((char)c, +1);
                 E.dirty = 1;
             }
             break;
