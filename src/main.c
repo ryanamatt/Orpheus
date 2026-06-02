@@ -23,8 +23,15 @@
  * Works as follows with # as comments:
  * setting=value
  * 
- * tab_width: int Sets the number of spaces to tab over 
- * show_line_numbers: int If 0 does not show line numbers. Otherwise Shows Line Numbers.
+ * tab_width: int 
+ *   Sets the number of spaces to tab over
+ *  
+ * show_line_numbers: int 
+ *   If 0, hides the line-number gutter. Any other value shows it. Default: 1.
+ * 
+ * auto_indent: int
+ *   If non-zero, pressing Enter copies the leading whitespace of the current
+ *   line to the new line automatically. Default: 1.
  */
 
 #include <ncurses.h>
@@ -37,8 +44,9 @@
 // --- Constants / Settings ---
 
 // #define TAB_WIDTH   4
-int TAB_WIDTH = 4;
-int SHOW_LINE_NUMBERS = 1;
+int TAB_WIDTH = 4;          // spaces per Tab keypress
+int SHOW_LINE_NUMBERS = 1;  // show line-number gutter?
+int AUTO_INDENT = 1;        // copy leading whitespace on Enter?
 
 #define MAX_STATUS  512
 #define CHUNK       64 // gap-buffer growth step (in chars)
@@ -133,8 +141,12 @@ void load_config(void) {
                 TAB_WIDTH = atoi(val);
             }
 
-            if (strcmp(key, "show_line_numbers") == 0) {
+            else if (strcmp(key, "show_line_numbers") == 0) {
                 SHOW_LINE_NUMBERS = atoi(val);
+            }
+
+            else if (strcmp(key, "auto_indent") == 0) {
+                AUTO_INDENT = atoi(val);
             }
         }
     }
@@ -649,6 +661,22 @@ int main(int argc, char *argv[]) {
         case KEY_ENTER:
             gap_insert(&E.text, E.cursor, '\n');
             E.cursor++;
+
+            if (AUTO_INDENT) {
+                int ln = pos_to_line(E.cursor - 1);
+                int s = line_start(ln);
+                int end = s + line_len(ln);
+                // Count Leading White spaces/tabs on the line that was just left
+                int ws = s;
+                while (ws < end && (gap_char(&E.text, ws) == ' ' || gap_char(&E.text, ws) == '\t'))
+                    ws++;
+                int indent = ws - s;
+                for (int i = 0; i < indent; i++) {
+                    char wc = gap_char(&E.text, s + i);
+                    gap_insert(&E.text, E.cursor, wc);
+                    E.cursor++;
+                }
+            }
             E.dirty = 1;
             break;
 
