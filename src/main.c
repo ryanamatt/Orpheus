@@ -47,6 +47,9 @@
  *     dark     — white text on dark backgrounds
  *     light    — black text on light backgrounds
  *     mono     — disables colour entirely (A_REVERSE for highlights)
+ * 
+ * gutter_width: int
+ *   The number of spaces for the width of the line number gutter. Default 5.
  */
 
 #include <ncurses.h>
@@ -58,13 +61,13 @@
 
 // --- Constants / Settings ---
 
-// #define TAB_WIDTH   4
 int TAB_WIDTH = 4;          // spaces per Tab keypress
 int SHOW_LINE_NUMBERS = 1;  // show line-number gutter
 int AUTO_INDENT = 1;        // copy leading whitespace on Enter
 int SHOW_STATUSBAR = 1;     // show the status/command bar row
 int CURSOR_STYLE = 1;       // 0=invisible 1=normal 2=block
 char COLOR_SCHEME[32] = "default"; // "default" | "dark" | "light" | "mono"
+int GUTTER_WIDTH = 5;       // spaces from left to line-number gutter
 
 #define MAX_STATUS  512
 #define CHUNK       64 // gap-buffer growth step (in chars)
@@ -179,6 +182,10 @@ void load_config(void) {
                 val[strcspn(val, "\r\n")] = 0;
                 strncpy(COLOR_SCHEME, val, sizeof(COLOR_SCHEME - 1));
                 COLOR_SCHEME[sizeof(COLOR_SCHEME) - 1] = '\0';
+            }
+
+            else if (strcmp(key, "gutter_width") == 0) {
+                GUTTER_WIDTH = atoi(val);
             }
         }
     }
@@ -300,14 +307,22 @@ static void draw_rows(void) {
     int total = total_lines();
     int text_rows = E.rows - (SHOW_STATUSBAR ? 2 : 0);
 
+    char fmt[16];
+    snprintf(fmt, sizeof(fmt), "%%%dd ", GUTTER_WIDTH - 1);
+
     for (int y = 0; y < text_rows; y++) {
         int ln = y + E.row_off;
         move(y, 0);
 
         // line number gutter
         attron(COLOR_PAIR(CP_LNUM));
-        if ((ln < total) && SHOW_LINE_NUMBERS) printw("%4d ", ln + 1);
-        else            printw("   ~ ");
+        if ((ln < total) && SHOW_LINE_NUMBERS) {
+            printw(fmt, ln + 1);
+        } else {
+            for(int i=0; i < GUTTER_WIDTH - 1; i++) addch(' ');
+            addch('~');
+            addch(' ');
+        }
         attroff(COLOR_PAIR(CP_LNUM));
 
         attron(COLOR_PAIR(CP_NORMAL));
@@ -356,7 +371,7 @@ static void draw_statusbar(void) {
 static void draw_cmdbar(void) {
     attron(COLOR_PAIR(CP_CMDBAR));
     move(E.rows - 1, 0);
-    printw(" ^S Save  ^Q Quit  ^F Find  ^G Go-To  ^K Cut  ^U Paste  ^D Del-Ln");
+    printw(" ^S Save  ^Q Quit  ^F Find  ^G Go-To  ^K Cut  ^U Paste  ^D Del-Ln ^H Hide");
     clrtoeol();
     attroff(COLOR_PAIR(CP_CMDBAR));
 
@@ -383,7 +398,7 @@ static void refresh_screen(void) {
     }
 
     // position real cursor
-    move(ln - E.row_off, 5 + vcol - E.col_off);
+    move(ln - E.row_off, GUTTER_WIDTH + vcol - E.col_off);
     refresh();
 }
 
@@ -428,9 +443,9 @@ static void do_find(void) {
     strncpy(E.search_term, term, sizeof E.search_term - 1);
     E.last_search_pos = E.cursor;
 
-    int len    = gap_len(&E.text);
-    int tlen   = strlen(term);
-    int start  = (E.cursor + 1) % len;
+    int len = gap_len(&E.text);
+    int tlen = strlen(term);
+    int start = (E.cursor + 1) % len;
 
     for (int i = 0; i < len; i++) {
         int pos = (start + i) % len;
@@ -451,8 +466,8 @@ static void do_find(void) {
 // --- Cut & Paste ---
 
 static void cut_line(void) {
-    int ln  = pos_to_line(E.cursor);
-    int s   = line_start(ln);
+    int ln = pos_to_line(E.cursor);
+    int s = line_start(ln);
     int len = line_len(ln);
     int end = s + len;
 
@@ -666,10 +681,10 @@ int main(int argc, char *argv[]) {
             goto_line();
             break;
 
-        // Cut / Paste / Delete
-        case ('k' & 0x1f):   cut_line();   break;
-        case ('u' & 0x1f):   paste_line(); break;
-        case ('d' & 0x1f):   delete_line(); break;
+        // Cut / Paste / Delete / Hide
+        case ('k' & 0x1f): cut_line();   break;
+        case ('u' & 0x1f): paste_line(); break;
+        case ('d' & 0x1f): delete_line(); break;
 
         // Movement
         case KEY_UP:         move_up();        break;
