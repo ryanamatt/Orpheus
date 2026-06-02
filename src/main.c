@@ -49,6 +49,9 @@
  * 
  * gutter_width: int
  *   The number of spaces for the width of the line number gutter. Default 5.
+ * 
+ * key_delay: int
+ *  The time it takes to wait for escape-sequence processing. Default 50.
  */
 
 #include <ncurses.h>
@@ -71,6 +74,7 @@ int SHOW_STATUSBAR = 1;     // show the status/command bar row
 int CURSOR_STYLE = 1;       // 0=invisible 1=normal 2=block
 char COLOR_SCHEME[32] = "default"; // "default" | "dark" | "light" | "mono"
 int GUTTER_WIDTH = 5;       // spaces from left to line-number gutter
+int KEY_DELAY = 50;         // wait time for escape-sequence processing
 
 #define MAX_STATUS  512
 #define CHUNK       64 // gap-buffer growth step (in chars)
@@ -189,6 +193,10 @@ void load_config(void) {
 
             else if (strcmp(key, "gutter_width") == 0) {
                 GUTTER_WIDTH = atoi(val);
+            }
+
+            else if (strcmp(key, "key_delay") == 0) {
+                KEY_DELAY = atoi(val);
             }
         }
     }
@@ -604,7 +612,7 @@ static void init_ncurses(void) {
     raw();
     noecho();
     keypad(stdscr, TRUE);
-    set_escdelay(50);
+    set_escdelay(KEY_DELAY);
 
     if (has_colors() && strcmp(COLOR_SCHEME, "mono") != 0) {
         start_color();
@@ -643,7 +651,7 @@ int handle_args(int argc, char *argv[]) {
     }
 
     // editron [-h | --help]
-    if (argc >= 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
+    if (argc == 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
         printf("Editron version %s\n", EDITRON_VERSION);
         printf("Usage: editron [file]\n\n");
         printf("Options:\n");
@@ -667,7 +675,7 @@ int handle_args(int argc, char *argv[]) {
     }
 
     // editron [-v | --version]
-    if (argc >= 2 && (strcmp(argv[1], "-v") == 0 || strcmp(argv[1], "--version") == 0)) {
+    if (argc == 2 && (strcmp(argv[1], "-v") == 0 || strcmp(argv[1], "--version") == 0)) {
         printf("Editron version %s\n", EDITRON_VERSION);
         return 1;
     }
@@ -690,6 +698,7 @@ int handle_args(int argc, char *argv[]) {
 }
 
 int main(int argc, char *argv[]) {
+    printf("Args count: %d\n", argc);
     // If handle args True exit early as it a flag to not enter text mode.
     if (handle_args(argc, argv)) return 0; 
 
