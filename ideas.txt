@@ -1,0 +1,5 @@
+Search and Replace to go with Find - take a search term and a replacement term, iterate through the Gap Buffer, and swap instances of the text.
+
+Support for Multiple Buffers/Tabs - switch between multiple open files using Ctrl-N (Next) or Ctrl-P (Previous).
+
+Word Count - Adding a character and word count

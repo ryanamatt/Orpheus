@@ -1,19 +1,48 @@
 CC = gcc
 CFLAGS = -std=c17 -Iinclude -Wall
+DEPFLAGS = -MMD -MP
+CFLAGS += DEPFLAGS
+
 LIBS = -lncurses
-SRC = $(wildcard src/*.c)
-OBJ = $(SRC:src/%.c=build/%.o)
-TARGET = editron
+
+SRC_DIR = src
+BUILD_DIR = build
+TARGET  = editron
+
+PREFIX ?= /usr/local
+BINDIR = $(PREFIX)/bin
+
+SRC = $(wildcard ${SRC_DIR}/*.c)
+OBJ = $(SRC:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
+DEPS = $(OBJ:.o=.d)
+
+.PHONY: all clean install uninstall
 
 all: $(TARGET)
 
 $(TARGET): $(OBJ)
-	$(CC) $(OBJ) -o $(TARGET) $(LIBS)
+	@echo "Linking $@"
+	@$(CC) $(OBJ) -o $(TARGET) $(LIBS)
 
-build/%.o: src/%.c
-	mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
+	@echo "Compiling $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+install: all
+	@echo "Installing $(TARGET) to $(BINDIR)..."
+	@mkdir -p $(BINDIR)
+	@install -m 755 $(TARGET) $(BINDIR)
+
+uninstall:
+	@echo "Removing $(TARGET) from $(BINDIR)..."
+	@rm -f $(BINDIR)/$(TARGET)
+
+-include $(DEPS)
 
 clean:
-	rm -rf build $(TARGET)
+	@echo "Cleaning up..."
+	@rm -rf $(BUILD_DIR) $(TARGET)
             
