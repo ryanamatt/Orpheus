@@ -3,7 +3,7 @@ CFLAGS = -std=c17 -Iinclude -Wall
 LIBS = -lncurses
 SRC = $(wildcard src/*.c)
 OBJ = $(SRC:src/%.c=build/%.o)
-TARGET = Editron
+TARGET = editron
 
 all: $(TARGET)
 

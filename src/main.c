@@ -15,8 +15,7 @@
  * Ctrl-D   delete line
  * Ctrl-A   go to start of line
  * Ctrl-E   go to end of line
- * Tab      insert 4 spaces
- * Backspace / Delete
+ * Ctrl+W   Toggle Hiding/Showing the Status Bar
  * 
  * Optional Settings placed in ~/.editronrc
  * -----------
@@ -638,8 +637,34 @@ static void init_ncurses(void) {
 
 // Handles Args. Returns 1 if not opening text editor, otherwise 0.
 int handle_args(int argc, char *argv[]) {
-    if (argc < 2)
-        set_status("ned - no file. Ctrl-S to save, Ctrl-Q to quit.");
+    if (argc < 2) {
+        set_status("editron - no file. Ctrl-S to save, Ctrl-Q to quit.");
+        return 0;
+    }
+
+    // editron [-h | --help]
+    if (argc >= 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
+        printf("Editron version %s\n", EDITRON_VERSION);
+        printf("Usage: editron [file]\n\n");
+        printf("Options:\n");
+        printf("  -h, --help        Show this help message\n");
+        printf("  -v, --version     Show version information\n\n");
+        printf("Keybindings:\n");
+        printf("Arrow keys          navigation Move 1 char in direction of arrow\n");
+        printf("PgUp/PgDn Home/End  Navigation Top/Bottom Front of Line/End of Line\n");
+        printf(" Ctrl-S             save\n");
+        printf(" Ctrl-Q             quit (warns on unsaved changes)\n");
+        printf(" Ctrl-F             find  (Enter to cycle, Esc to cancel)\n");
+        printf(" Ctrl-G             go to line\n");
+        printf(" Ctrl-K             cut line\n");
+        printf(" Ctrl-U             paste (yank) line\n");
+        printf(" Ctrl-D             delete line\n");
+        printf(" Ctrl-A             go to start of line\n");
+        printf(" Ctrl-E             go to end of line\n");
+        printf(" Ctrl+W             Toggle Hiding/Showing the Status Bar\n");
+        printf("\n");
+        return 1;
+    }
 
     // editron [-v | --version]
     if (argc >= 2 && (strcmp(argv[1], "-v") == 0 || strcmp(argv[1], "--version") == 0)) {
@@ -657,8 +682,11 @@ int handle_args(int argc, char *argv[]) {
         return 0;
     }
 
-    printf("Incorrect Usage. editron [filename | -v]\n");
-    return 0;
+    printf("Incorrect Usage. Try: \n" \
+        "editron\n" \
+        "editron [--help | --version]\n"
+        "editron [filename]\n");
+    return 1;
 }
 
 int main(int argc, char *argv[]) {
