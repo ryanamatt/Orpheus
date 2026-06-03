@@ -32,7 +32,8 @@
  * Ctrl-D   delete line
  * Ctrl-A   go to start of line
  * Ctrl-E   go to end of line
- * Ctrl+W   Toggle Hiding/Showing the Status Bar
+ * Ctrl-W   Toggle Hiding/Showing the Status Bar
+ * Ctrl-O   Open a new empty buffer
  * Ctrl-N   Switch to next buffer/tab
  * Ctrl-P   Switch to previous buffer/tab
  * 
@@ -550,8 +551,7 @@ static void draw_tabbar(void) {
 
 static void draw_statusbar(void) {
     attron(COLOR_PAIR(CP_STATUS) | A_BOLD);
-    int tab_rows = (buf_count > 1) ? 1 : 0;
-    move(E.rows - 2 - tab_rows, 0);
+    move(E.rows - 2, 0);
     int ln = E.current_line;
     int col = cursor_vcol();
 
@@ -575,9 +575,8 @@ static void draw_statusbar(void) {
 }
 
 static void draw_cmdbar(void) {
-    int tab_rows = (buf_count > 1) ? 1 : 0;
     attron(COLOR_PAIR(CP_CMDBAR));
-    move(E.rows - 1 - tab_rows, 0);
+    move(E.rows - 1, 0);
     printw(" ^S Save  ^Q Quit  ^F Find  ^G Go-To  ^K Cut  ^U Paste  ^D Del-Ln  ^W Hide  ^N Next  ^P Prev");
     clrtoeol();
     attroff(COLOR_PAIR(CP_CMDBAR));
@@ -588,7 +587,7 @@ static void draw_cmdbar(void) {
         int x    = E.cols - slen - 2;
         if (x < 0) x = 0;
         attron(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
-        mvprintw(E.rows - 1 - tab_rows, x, " %s ", E.status);
+        mvprintw(E.rows - 1, x, " %s ", E.status);
         attroff(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
     }
 }
@@ -617,8 +616,7 @@ static void refresh_screen(void) {
 
 static int mini_input(const char *prompt, char *out, int max) {
     int len = 0;
-    int tab_rows = (buf_count > 1) ? 1 : 0;
-    int input_row = E.rows - 1 - tab_rows;
+    int input_row = E.rows - 1;
     out[0]  = '\0';
     move(input_row, 0);
     attron(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
@@ -813,8 +811,7 @@ static void goto_line(void) {
 
 static int confirm_quit(void) {
     if (!E.dirty) return 1;
-    int tab_rows = (buf_count > 1) ? 1 : 0;
-    move(E.rows - 1 - tab_rows, 0);
+    move(E.rows - 1, 0);
     attron(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
     clrtoeol();
     printw(" Unsaved changes! Press Q to quit without saving, S to save, or Esc to cancel.");
@@ -908,6 +905,7 @@ int handle_args(int argc, char *argv[]) {
         printf(" Ctrl-A             Go to start of line\n");
         printf(" Ctrl-E             Go to end of line\n");
         printf(" Ctrl-W             Toggle hiding/showing the status bar\n");
+        printf(" Ctrl-O             Open a new empty buffer\n");
         printf(" Ctrl-N             Switch to next buffer/tab\n");
         printf(" Ctrl-P             Switch to previous buffer/tab\n");
         printf("\n");
@@ -1000,7 +998,17 @@ int main(int argc, char *argv[]) {
         // Toggle Status
         case ('w' & 0x1f): toggle_status(); break;
 
-        // Buffer/Tab navigation
+        case ('o' & 0x1f): { // Ctrl-O — new empty buffer
+            int idx = new_buffer();
+            if (idx < 0) {
+                set_status("Too many buffers open (max %d)", MAX_BUFFERS);
+            } else {
+                switch_buffer(idx);
+                set_status("New buffer %d/%d  [No Name]", cur_buf + 1, buf_count);
+            }
+            break;
+        }
+
         case ('n' & 0x1f): // Ctrl-N — next buffer
             if (buf_count > 1) {
                 switch_buffer(cur_buf + 1);

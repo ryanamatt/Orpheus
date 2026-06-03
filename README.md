@@ -77,6 +77,9 @@ orp [file]
 | **Ctrl-A** | Go to start of line |
 | **Ctrl-E** | Go to end of line |
 | **Ctrl-W** | Toggle status bar visibility |
+| **Ctrl-O** | Open a new Buffer/tab |
+| **Ctrl-P** | Go to previous tab |
+| **Ctrl-N** | Go to next tab |
 
 ## **Configuration**
 
