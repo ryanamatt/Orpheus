@@ -1,3 +1,9 @@
+VERSION_MAJOR := 0
+VERSION_MINOR := 1
+VERSION_HEADER := include/version.h
+GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "v$(VERSION_MAJOR).$(VERSION_MINOR)-unknown")
+BUILD_DATE := $(shell date +'%Y-%m-%d %H:%M:%S')
+
 CC = gcc
 CFLAGS = -std=c17 -Iinclude -Wall -O3
 DEPFLAGS = -MMD -MP
@@ -16,15 +22,24 @@ SRC = $(wildcard ${SRC_DIR}/*.c)
 OBJ = $(SRC:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 DEPS = $(OBJ:.o=.d)
 
-.PHONY: all clean install uninstall
+.PHONY: all clean install uninstall FORCE
 
-all: $(TARGET)
+all: $(VERSION_HEADER) $(TARGET)
 
 $(TARGET): $(OBJ)
 	@echo "Linking $@"
 	@$(CC) $(OBJ) -o $(TARGET) $(LIBS)
 
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
+$(VERSION_HEADER): FORCE
+	@mkdir -p include
+	@echo "Generating $@"
+	@echo "#ifndef VERSION_H" > $@
+	@echo "#define VERSION_H" >> $@
+	@echo "#define ORPHEUS_VERSION \"$(GIT_VERSION)\"" >> $@
+	@echo "#define BUILD_DATE \"$(BUILD_DATE)\"" >> $@
+	@echo "#endif" >> $@
+
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c $(VERSION_HEADER) | $(BUILD_DIR)
 	@echo "Compiling $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 
@@ -45,4 +60,3 @@ uninstall:
 clean:
 	@echo "Cleaning up..."
 	@rm -rf $(BUILD_DIR) $(TARGET)
-            

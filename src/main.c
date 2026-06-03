@@ -77,10 +77,7 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <errno.h>
-
-// --- Version ---
-
-#define ORPHEUS_VERSION "0.1.0"
+#include "version.h"
 
 // --- Constants / Settings ---
 
@@ -832,7 +829,9 @@ int handle_args(int argc, char *argv[]) {
 
     // orp [-v | --version]
     if (argc == 2 && (strcmp(argv[1], "-v") == 0 || strcmp(argv[1], "--version") == 0)) {
-        printf("Orpheus version %s\n", ORPHEUS_VERSION);
+        printf("Orpheus\n");
+        printf("Version: %s\n", ORPHEUS_VERSION);
+        printf("Built: %s\n", BUILD_DATE);
         return 1;
     }
 
