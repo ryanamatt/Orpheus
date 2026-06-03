@@ -988,7 +988,7 @@ int handle_args(int argc, char *argv[]) {
 
     // orp [-h | --help]
     if (argc == 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
-        printf("Orpheus version %s\n", ORPHEUS_VERSION);
+        printf("Orpheus %s\n", ORPHEUS_VERSION);
         printf("Usage: orp [file ...]\n\n");
         printf("Options:\n");
         printf("  -h, --help        Show this help message\n");
