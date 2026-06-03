@@ -1,6 +1,6 @@
 # **Orpheus**
 
-Orpheus is a small, lightweight text editor built using C and the ncurses library. It is designed 
+Orpheus is a small, lightweight text editor built using C and the ncurses library. It is designed
 for simplicity and efficiency in the terminal environment.
 
 ## **Features**
@@ -56,7 +56,9 @@ make clean
 
 ## **Usage**
 
-orp \[file\]
+```Bash
+orp [file]
+```
 
 ### **Keybindings**
 
