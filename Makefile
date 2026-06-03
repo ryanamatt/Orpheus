@@ -1,7 +1,9 @@
 VERSION_MAJOR := 0
 VERSION_MINOR := 1
+VERSION_PATCH := 0
 VERSION_HEADER := include/version.h
-GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "v$(VERSION_MAJOR).$(VERSION_MINOR)-unknown")
+GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || \
+	echo "v$(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_PATCH)-unknown")
 BUILD_DATE := $(shell date +'%Y-%m-%d %H:%M:%S')
 
 CC = gcc
