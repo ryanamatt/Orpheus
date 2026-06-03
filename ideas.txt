@@ -1,3 +1,0 @@
-Search and Replace to go with Find - take a search term and a replacement term, iterate through the Gap Buffer, and swap instances of the text.
-
-Possible Add a terminal shell
