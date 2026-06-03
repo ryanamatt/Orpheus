@@ -1106,14 +1106,32 @@ int main(int argc, char *argv[]) {
         case ('w' & 0x1f): toggle_status(); break;
 
         case ('o' & 0x1f): { // Ctrl-O — new empty buffer
-            int idx = new_buffer();
-            if (idx < 0) {
-                set_status("Too many buffers open (max %d)", MAX_BUFFERS);
-            } else {
-                switch_buffer(idx);
-                set_status("New buffer %d/%d  [No Name]", cur_buf + 1, buf_count);
+            char fname[256];
+            if (mini_input("Open file (blank for new): ", fname, sizeof fname) && fname[0]) {
+                int idx = new_buffer();
+                if (idx < 0) {
+                    set_status("Too many buffers open (max %d)", MAX_BUFFERS);
+                } else {
+                    switch_buffer(idx);
+                    strncpy(E.filename, fname, sizeof(E.filename) - 1);
+                    E.filename[sizeof(E.filename) - 1] = '\0';
+                    if (!load_file(E.filename))
+                        set_status("New file: \"%s\"", E.filename);
+                    else
+                        set_status("Opened \"%s\"", E.filename);
+                }
             }
+            else {
+                // blank input - open empty unnamed buffer.
+                int idx = new_buffer();
+                if (idx < 0) {
+                    set_status("Too many buffers open (max %d)", MAX_BUFFERS);
+                } else {
+                    switch_buffer(idx);
+                    set_status("New buffer %d/%d  [No Name]", cur_buf + 1, buf_count);
+                }
             break;
+            }
         }
 
         case ('n' & 0x1f): // Ctrl-N — next buffer
