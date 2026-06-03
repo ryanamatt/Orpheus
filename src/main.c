@@ -26,6 +26,7 @@
  * Ctrl-S   save
  * Ctrl-Q   quit (warns on unsaved changes)
  * Ctrl-F   find  (Enter to cycle, Esc to cancel)
+ * Ctrl-R   replace (prompts for search term, replacement, then all/next)
  * Ctrl-G   go to line
  * Ctrl-K   cut line
  * Ctrl-U   paste (yank) line
@@ -577,7 +578,7 @@ static void draw_statusbar(void) {
 static void draw_cmdbar(void) {
     attron(COLOR_PAIR(CP_CMDBAR));
     move(E.rows - 1, 0);
-    printw(" ^S Save  ^Q Quit  ^F Find  ^G Go-To  ^K Cut  ^U Paste  ^D Del-Ln  ^W Hide  ^N Next  ^P Prev");
+    printw(" ^S Save  ^Q Quit  ^F Find  ^R Repl  ^G Go-To  ^K Cut  ^U Paste  ^D Del-Ln  ^W Hide  ^N Next  ^P Prev");
     clrtoeol();
     attroff(COLOR_PAIR(CP_CMDBAR));
 
@@ -674,6 +675,106 @@ static void do_find(void) {
         }
     }
     set_status("Not found: \"%s\"", term);
+}
+
+// --- Replace ---
+
+/*
+ * do_replace: Find & Replace (Ctrl-R)
+ *
+ * Prompts for a search term, then a replacement string.
+ * Then asks: A = replace All, N = replace Next only, Esc = cancel.
+ *
+ * For "replace next": replaces the first occurrence at or after the cursor.
+ * For "replace all":  replaces every occurrence, reports the count.
+ *
+ * Replacement is done by deleting the matched characters at the found
+ * position and inserting the replacement string in their place.
+ */
+static void do_replace(void) {
+    char term[256]    = {0};
+    char rep[256]     = {0};
+
+    if (!mini_input("Replace: ", term, sizeof term))
+        return;
+    if (!mini_input("With: ", rep, sizeof rep)) {
+        // empty replacement is valid — it means "delete the match"
+        rep[0] = '\0';
+    }
+
+    int tlen = strlen(term);
+    int rlen = strlen(rep);
+    if (tlen == 0) { set_status("Nothing to replace"); return; }
+
+    move(E.rows - 1, 0);
+    attron(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
+    clrtoeol();
+    printw(" Replace [A]ll / [N]ext / Esc to cancel");
+    attroff(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
+    refresh();
+    int choice = getch();
+    if (choice == 27) { set_status("Replace cancelled"); return; }
+
+    int total_len = gap_len(&E.text);
+
+    if (choice == 'a' || choice == 'A') {
+        // Replace All — scan from position 0, replace each match.
+        int count = 0;
+        int pos   = 0;
+        while (pos <= gap_len(&E.text) - tlen) {
+            int match = 1;
+            for (int j = 0; j < tlen && match; j++)
+                if (gap_char(&E.text, pos + j) != term[j]) match = 0;
+            if (match) {
+                // delete tlen chars at pos
+                for (int j = 0; j < tlen; j++)
+                    gap_delete(&E.text, pos);
+                // insert replacement at pos 
+                for (int j = 0; j < rlen; j++)
+                    gap_insert(&E.text, pos + j, rep[j]);
+                pos += rlen;   // skip past what we just inserted
+                count++;
+                E.dirty = 1;
+            } else {
+                pos++;
+            }
+        }
+        if (count) {
+            rebuild_line_count();
+            E.current_line = pos_to_line(E.cursor);
+            set_status("Replaced %d occurrence%s", count, count == 1 ? "" : "s");
+        } else {
+            set_status("Not found: \"%s\"", term);
+        }
+    } else if (choice == 'n' || choice == 'N') {
+        // Replace Next — search forward from cursor (wrapping).
+        total_len = gap_len(&E.text);
+        int start = E.cursor;
+        int found = -1;
+        for (int i = 0; i < total_len; i++) {
+            int pos = (start + i) % total_len;
+            if (pos + tlen > total_len) continue;
+            int match = 1;
+            for (int j = 0; j < tlen && match; j++)
+                if (gap_char(&E.text, pos + j) != term[j]) match = 0;
+            if (match) { found = pos; break; }
+        }
+        if (found < 0) {
+            set_status("Not found: \"%s\"", term);
+            return;
+        }
+        for (int j = 0; j < tlen; j++)
+            gap_delete(&E.text, found);
+        for (int j = 0; j < rlen; j++)
+            gap_insert(&E.text, found + j, rep[j]);
+        E.cursor = found + rlen;
+        E.dirty  = 1;
+        rebuild_line_count();
+        E.current_line = pos_to_line(E.cursor);
+        set_status("Replaced \"%s\" with \"%s\"", term, rep);
+    } else {
+        set_status("Replace cancelled");
+    }
 }
 
 // --- Cut & Paste ---
@@ -898,6 +999,7 @@ int handle_args(int argc, char *argv[]) {
         printf(" Ctrl-S             Save\n");
         printf(" Ctrl-Q             Quit (warns on unsaved changes)\n");
         printf(" Ctrl-F             Find  (Enter to cycle, Esc to cancel)\n");
+        printf(" Ctrl-R             Replace (search, replacement, then All/Next)\n");
         printf(" Ctrl-G             Go to line\n");
         printf(" Ctrl-K             Cut line\n");
         printf(" Ctrl-U             Paste (yank) line\n");
@@ -983,6 +1085,11 @@ int main(int argc, char *argv[]) {
         // Find
         case ('f' & 0x1f): // Ctrl-F
             do_find();
+            break;
+
+        // Replace
+        case ('r' & 0x1f): // Ctrl-R
+            do_replace();
             break;
 
         // Go to Line
