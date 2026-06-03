@@ -18,7 +18,7 @@
  */
 
 /*
- * Usage: orp [file]
+ * Usage: orp [file ...]
  *
  * Keybindings
  * -----------
@@ -33,6 +33,8 @@
  * Ctrl-A   go to start of line
  * Ctrl-E   go to end of line
  * Ctrl+W   Toggle Hiding/Showing the Status Bar
+ * Ctrl-N   Switch to next buffer/tab
+ * Ctrl-P   Switch to previous buffer/tab
  * 
  * Optional Settings placed in ~/.orpheusrc
  * -----------
@@ -91,7 +93,8 @@ int GUTTER_WIDTH = 5;       // spaces from left to line-number gutter
 int KEY_DELAY = 50;         // wait time for escape-sequence processing
 
 #define MAX_STATUS  512
-#define CHUNK       64 // gap-buffer growth step (in chars)
+#define CHUNK       64  // gap-buffer growth step (in chars)
+#define MAX_BUFFERS 32  // maximum number of open buffers/tabs
 
 // --- Color Pairs ---
 #define CP_NORMAL   1
@@ -247,27 +250,47 @@ void load_config(void) {
 
 // --- Editor State ---
 
+// --- Buffer State (one per open file) ---
+
 typedef struct {
     Gap   text;
-    int   cursor;               // logical char offset                         
-    int   row_off;              // first visible row                           
-    int   col_off;              // first visible column                        
-    int   rows, cols;           // terminal size                               
-    int   dirty;                // unsaved changes flag                        
+    int   cursor;               // logical char offset
+    int   row_off;              // first visible row
+    int   col_off;              // first visible column
+    int   rows, cols;           // terminal size (updated each frame)
+    int   dirty;                // unsaved changes flag
     char  filename[256];
     char  status[MAX_STATUS];
-    char  clipboard[4096];      // cut/paste buffer                            
+    char  clipboard[4096];      // cut/paste buffer
     int   cb_len;
-    int   last_search_pos;      // for repeated Ctrl-F search                  
+    int   last_search_pos;      // for repeated Ctrl-F search
     char  search_term[256];
 
     int   line_count;           // total newlines + 1 (kept incrementally)
     int   word_count;           // kept incrementally via stats_dirty
     int   stats_dirty;          // non-zero -> word_count needs a full rescan
-    int   current_line;         // 0-based line the cursor is on (Optimization 4)
-} Editor;
+    int   current_line;         // 0-based line the cursor is on
+} Buffer;
 
-static Editor E;
+// --- Multi-buffer globals ---
+
+static Buffer  buffers[MAX_BUFFERS];
+static int     buf_count = 0;   // number of open buffers
+static int     cur_buf   = 0;   // index of active buffer
+
+// E is a convenience pointer — always points to buffers[cur_buf].
+// All existing code that touches E.field continues to work unchanged.
+#define E (*E_ptr)
+static Buffer *E_ptr;
+
+// Switch to buffer index i, clamped to valid range.
+static void switch_buffer(int i) {
+    if (buf_count == 0) return;
+    if (i < 0) i = buf_count - 1;
+    if (i >= buf_count) i = 0;
+    cur_buf = i;
+    E_ptr   = &buffers[cur_buf];
+}
 
 // --- helpers ---
 
@@ -430,9 +453,11 @@ static int save_file(void) {
 // --- display ---
 
 static void adjust_scroll(void) {
+    // Extra row used by the tab bar when more than one buffer is open
+    int tab_rows = (buf_count > 1) ? 1 : 0;
     int cur_line = E.current_line;
     int vcol = cursor_vcol();
-    int text_rows = E.rows - (SHOW_STATUSBAR ? 2 : 0);   // status + command bar
+    int text_rows = E.rows - (SHOW_STATUSBAR ? 2 : 0) - tab_rows;   // status + command bar
 
     if (cur_line < E.row_off)               E.row_off = cur_line;
     if (cur_line >= E.row_off + text_rows)  E.row_off = cur_line - text_rows + 1;
@@ -442,7 +467,8 @@ static void adjust_scroll(void) {
 
 static void draw_rows(void) {
     int total = total_lines();
-    int text_rows = E.rows - (SHOW_STATUSBAR ? 2 : 0);
+    int tab_rows = (buf_count > 1) ? 1 : 0;
+    int text_rows = E.rows - (SHOW_STATUSBAR ? 2 : 0) - tab_rows;
 
     char fmt[16];
     snprintf(fmt, sizeof(fmt), "%%%dd ", GUTTER_WIDTH - 1);
@@ -487,9 +513,45 @@ static void draw_rows(void) {
     }
 }
 
+static void draw_tabbar(void) {
+    // Tab bar sits at E.rows - 3 when statusbar is shown, else E.rows - 1.
+    // We only draw it when there is more than one buffer open.
+    if (buf_count <= 1) return;
+
+    int row = E.rows - (SHOW_STATUSBAR ? 3 : 1);
+    attron(COLOR_PAIR(CP_STATUS));
+    move(row, 0);
+    clrtoeol();
+
+    int x = 0;
+    for (int i = 0; i < buf_count && x < E.cols - 1; i++) {
+        const char *name = buffers[i].filename[0]
+                           ? buffers[i].filename : "[No Name]";
+        // Strip directory prefix for display
+        const char *base = strrchr(name, '/');
+        base = base ? base + 1 : name;
+
+        char tab[64];
+        int tlen = snprintf(tab, sizeof tab, " %s%s ",
+                            base,
+                            buffers[i].dirty ? "+" : "");
+
+        if (i == cur_buf)
+            attron(A_BOLD | A_REVERSE);
+        if (x + tlen < E.cols)
+            mvprintw(row, x, "%s", tab);
+        if (i == cur_buf)
+            attroff(A_BOLD | A_REVERSE);
+
+        x += tlen;
+    }
+    attroff(COLOR_PAIR(CP_STATUS));
+}
+
 static void draw_statusbar(void) {
     attron(COLOR_PAIR(CP_STATUS) | A_BOLD);
-    move(E.rows - 2, 0);
+    int tab_rows = (buf_count > 1) ? 1 : 0;
+    move(E.rows - 2 - tab_rows, 0);
     int ln = E.current_line;
     int col = cursor_vcol();
 
@@ -513,9 +575,10 @@ static void draw_statusbar(void) {
 }
 
 static void draw_cmdbar(void) {
+    int tab_rows = (buf_count > 1) ? 1 : 0;
     attron(COLOR_PAIR(CP_CMDBAR));
-    move(E.rows - 1, 0);
-    printw(" ^S Save  ^Q Quit  ^F Find  ^G Go-To  ^K Cut  ^U Paste  ^D Del-Ln  ^W Hide");
+    move(E.rows - 1 - tab_rows, 0);
+    printw(" ^S Save  ^Q Quit  ^F Find  ^G Go-To  ^K Cut  ^U Paste  ^D Del-Ln  ^W Hide  ^N Next  ^P Prev");
     clrtoeol();
     attroff(COLOR_PAIR(CP_CMDBAR));
 
@@ -525,7 +588,7 @@ static void draw_cmdbar(void) {
         int x    = E.cols - slen - 2;
         if (x < 0) x = 0;
         attron(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
-        mvprintw(E.rows - 1, x, " %s ", E.status);
+        mvprintw(E.rows - 1 - tab_rows, x, " %s ", E.status);
         attroff(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
     }
 }
@@ -537,11 +600,14 @@ static void refresh_screen(void) {
 
     draw_rows();
     if (SHOW_STATUSBAR) {
+        draw_tabbar();
         draw_statusbar();
         draw_cmdbar();
+    } else {
+        draw_tabbar();
     }
 
-    // position real cursor
+    // position real cursor (tab bar does not shift text rows — it sits below)
     move(ln - E.row_off, GUTTER_WIDTH + vcol - E.col_off);
     wnoutrefresh(stdscr);
     doupdate();
@@ -551,8 +617,10 @@ static void refresh_screen(void) {
 
 static int mini_input(const char *prompt, char *out, int max) {
     int len = 0;
+    int tab_rows = (buf_count > 1) ? 1 : 0;
+    int input_row = E.rows - 1 - tab_rows;
     out[0]  = '\0';
-    move(E.rows - 1, 0);
+    move(input_row, 0);
     attron(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
     clrtoeol();
     printw(" %s", prompt);
@@ -568,7 +636,7 @@ static int mini_input(const char *prompt, char *out, int max) {
             out[len++] = (char)c;
             out[len]   = '\0';
         }
-        move(E.rows - 1, 0);
+        move(input_row, 0);
         clrtoeol();
         printw(" %s%s", prompt, out);
         refresh();
@@ -745,7 +813,8 @@ static void goto_line(void) {
 
 static int confirm_quit(void) {
     if (!E.dirty) return 1;
-    move(E.rows - 1, 0);
+    int tab_rows = (buf_count > 1) ? 1 : 0;
+    move(E.rows - 1 - tab_rows, 0);
     attron(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
     clrtoeol();
     printw(" Unsaved changes! Press Q to quit without saving, S to save, or Esc to cancel.");
@@ -796,9 +865,25 @@ static void init_ncurses(void) {
     curs_set(CURSOR_STYLE);
 }
 
+// Allocate and initialise one fresh buffer slot; returns its index.
+static int new_buffer(void) {
+    if (buf_count >= MAX_BUFFERS) return -1;
+    int idx = buf_count++;
+    memset(&buffers[idx], 0, sizeof(Buffer));
+    gap_init(&buffers[idx].text);
+    buffers[idx].line_count  = 1;
+    buffers[idx].word_count  = 0;
+    buffers[idx].stats_dirty = 0;
+    buffers[idx].current_line= 0;
+    return idx;
+}
+
 // Handles Args. Returns 1 if not opening text editor, otherwise 0.
 int handle_args(int argc, char *argv[]) {
     if (argc < 2) {
+        // No file: one empty unnamed buffer
+        new_buffer();
+        switch_buffer(0);
         set_status("orpheus - no file. Ctrl-S to save, Ctrl-Q to quit.");
         return 0;
     }
@@ -806,23 +891,25 @@ int handle_args(int argc, char *argv[]) {
     // orp [-h | --help]
     if (argc == 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
         printf("Orpheus version %s\n", ORPHEUS_VERSION);
-        printf("Usage: orp [file]\n\n");
+        printf("Usage: orp [file ...]\n\n");
         printf("Options:\n");
         printf("  -h, --help        Show this help message\n");
         printf("  -v, --version     Show version information\n\n");
         printf("Keybindings:\n");
-        printf("Arrow keys          navigation Move 1 char in direction of arrow\n");
-        printf("PgUp/PgDn Home/End  Navigation Top/Bottom Front of Line/End of Line\n");
-        printf(" Ctrl-S             save\n");
-        printf(" Ctrl-Q             quit (warns on unsaved changes)\n");
-        printf(" Ctrl-F             find  (Enter to cycle, Esc to cancel)\n");
-        printf(" Ctrl-G             go to line\n");
-        printf(" Ctrl-K             cut line\n");
-        printf(" Ctrl-U             paste (yank) line\n");
-        printf(" Ctrl-D             delete line\n");
-        printf(" Ctrl-A             go to start of line\n");
-        printf(" Ctrl-E             go to end of line\n");
-        printf(" Ctrl+W             Toggle Hiding/Showing the Status Bar\n");
+        printf("Arrow keys          Navigation - move 1 char in direction of arrow\n");
+        printf("PgUp/PgDn Home/End  Navigation - top/bottom, front/end of line\n");
+        printf(" Ctrl-S             Save\n");
+        printf(" Ctrl-Q             Quit (warns on unsaved changes)\n");
+        printf(" Ctrl-F             Find  (Enter to cycle, Esc to cancel)\n");
+        printf(" Ctrl-G             Go to line\n");
+        printf(" Ctrl-K             Cut line\n");
+        printf(" Ctrl-U             Paste (yank) line\n");
+        printf(" Ctrl-D             Delete line\n");
+        printf(" Ctrl-A             Go to start of line\n");
+        printf(" Ctrl-E             Go to end of line\n");
+        printf(" Ctrl-W             Toggle hiding/showing the status bar\n");
+        printf(" Ctrl-N             Switch to next buffer/tab\n");
+        printf(" Ctrl-P             Switch to previous buffer/tab\n");
         printf("\n");
         return 1;
     }
@@ -835,41 +922,43 @@ int handle_args(int argc, char *argv[]) {
         return 1;
     }
 
-    // orp [filename]
-    else if (argc == 2) {
-        strncpy(E.filename, argv[1], sizeof(E.filename - 1));
+    // orp [file ...] — open each file as its own buffer
+    for (int i = 1; i < argc; i++) {
+        int idx = new_buffer();
+        if (idx < 0) {
+            fprintf(stderr, "orpheus: too many files (max %d)\n", MAX_BUFFERS);
+            break;
+        }
+        // Temporarily point E at this buffer so load_file / set_status work
+        cur_buf = idx;
+        E_ptr   = &buffers[idx];
+        strncpy(E.filename, argv[i], sizeof(E.filename) - 1);
+        E.filename[sizeof(E.filename) - 1] = '\0';
         if (!load_file(E.filename))
             set_status("New file: \"%s\"", E.filename);
         else
             set_status("Opened \"%s\"", E.filename);
-        return 0;
     }
-
-    printf("Incorrect Usage. Try: \n" \
-        "orp\n" \
-        "orp [--help | --version]\n"
-        "orp [filename]\n");
-    return 1;
+    switch_buffer(0);
+    return 0;
 }
 
 int main(int argc, char *argv[]) {
-    memset(&E, 0, sizeof E);
     load_config();
-    gap_init(&E.text);
-    // Initialise cached statistics (empty buffer = 1 line, 0 words)
-    E.line_count   = 1;
-    E.word_count   = 0;
-    E.stats_dirty  = 0;
-    E.current_line = 0;
 
-    // If handle args True exit early as it a flag to not enter text mode.
-    if (handle_args(argc, argv)) return 0; 
+    // If handle_args returns 1 it was a flag like --help; exit early.
+    if (handle_args(argc, argv)) return 0;
 
     init_ncurses();
     getmaxyx(stdscr, E.rows, E.cols);
 
     while (1) {
         getmaxyx(stdscr, E.rows, E.cols);
+        // Keep terminal size in sync for all buffers
+        for (int i = 0; i < buf_count; i++) {
+            buffers[i].rows = E.rows;
+            buffers[i].cols = E.cols;
+        }
         refresh_screen();
         E.status[0] = '\0'; // clear status after one frame
 
@@ -887,7 +976,7 @@ int main(int argc, char *argv[]) {
                 char buf[256];
                 if (mini_input("Save as: ", buf, sizeof buf)) {
                     strncpy(E.filename, buf, sizeof(E.filename));
-                    E.search_term[sizeof(E.search_term) - 1] = '\0'; // Manually ensure null termination
+                    E.search_term[sizeof(E.search_term) - 1] = '\0';
                     save_file();
                 }
             } else save_file();
@@ -911,6 +1000,29 @@ int main(int argc, char *argv[]) {
         // Toggle Status
         case ('w' & 0x1f): toggle_status(); break;
 
+        // Buffer/Tab navigation
+        case ('n' & 0x1f): // Ctrl-N — next buffer
+            if (buf_count > 1) {
+                switch_buffer(cur_buf + 1);
+                set_status("Buffer %d/%d: %s",
+                           cur_buf + 1, buf_count,
+                           E.filename[0] ? E.filename : "[No Name]");
+            } else {
+                set_status("Only one buffer open");
+            }
+            break;
+
+        case ('p' & 0x1f): // Ctrl-P — previous buffer
+            if (buf_count > 1) {
+                switch_buffer(cur_buf - 1);
+                set_status("Buffer %d/%d: %s",
+                           cur_buf + 1, buf_count,
+                           E.filename[0] ? E.filename : "[No Name]");
+            } else {
+                set_status("Only one buffer open");
+            }
+            break;
+
         // Movement
         case KEY_UP:         move_up();        break;
         case KEY_DOWN:       move_down();      break;
@@ -929,7 +1041,6 @@ int main(int argc, char *argv[]) {
         case '\b':
             if (E.cursor > 0) {
                 char deleted = gap_char(&E.text, E.cursor - 1);
-                // if gap is already at cursor, shift left by 1 byte
                 if (E.text.gap_start == E.cursor)
                     gap_shift_left(&E.text);
                 else
@@ -969,7 +1080,6 @@ int main(int argc, char *argv[]) {
                 int ln = E.current_line - 1;
                 int s = line_start(ln);
                 int end = s + line_len(ln);
-                // Count leading whitespace/tabs on the line that was just left
                 int ws = s;
                 while (ws < end && (gap_char(&E.text, ws) == ' ' || gap_char(&E.text, ws) == '\t'))
                     ws++;
@@ -997,6 +1107,7 @@ int main(int argc, char *argv[]) {
 
 done:
     endwin();
-    gap_free(&E.text);
+    for (int i = 0; i < buf_count; i++)
+        gap_free(&buffers[i].text);
     return 0;
 }
