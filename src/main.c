@@ -114,6 +114,14 @@ typedef struct {
     int    size;        // total allocated bytes
 } Gap;
 
+/**
+ * @brief Initialize a Gap Buffer with a small default allocation.
+ * 
+ * Allocates @c CHUNK butes of raw storage, places the entire allocation inside the gap
+ * (gap_start = 0, gap_end = size) and sets, the logical content length to zero.
+ * 
+ * @param g Pointer to uninitalized Gap Struct.  
+ */
 static void gap_init(Gap *g) {
     g->size      = CHUNK;
     g->buf       = malloc(g->size);
@@ -121,13 +129,48 @@ static void gap_init(Gap *g) {
     g->gap_end   = g->size;
 }
 
+/**
+ * @brief Release the heap storage that a Gap Buffer owns.
+ * 
+ * @param g Pointer to the Gap Buffer to free.
+ */
 static void gap_free(Gap *g) { free(g->buf); }
 
+/**
+ * @brief Return the logical length of a Gap.
+ * 
+ * The length of the Gap is equal to = Gap size - (Gap End - Gap Start)
+ * 
+ * @param g Pointer to Gap Buffer.
+ * @return Number of content characters stored in the buffer.
+ */
 static int  gap_len(const Gap *g)   { return g->size - (g->gap_end - g->gap_start); }
+
+/**
+ * @brief Return the character at the logical position @p pos.
+ * 
+ * Positions before the gao are read directly; positions at or after gap are
+ * translated past the gap region before indexing the raw buffer.
+ * 
+ * @param g Pointer to the Gap buffer.
+ * @param pos Zero-based logical character index (0 ... gap_len(g) - 1)
+ * @return The character stored at @p pos.
+ * 
+ */
 static char gap_char(const Gap *g, int pos) {
     return pos < g->gap_start ? g->buf[pos] : g->buf[g->gap_end + (pos - g->gap_start)];
 }
 
+/**
+ * @brief Ensure the gap is at least @p need bytes wide, growing if necessary.
+ * 
+ * If the current gap is already wide enough the function returns immediately.
+ * Otherwise it reallocates the backing array and shifts the tail of the buffer
+ * so the gap remains contiguous at its current postions.
+ * 
+ * @param g Pointer to the Gap buffer.
+ * @param need Minimum number of free gap bytes required.
+ */
 static void gap_grow(Gap *g, int need) {
     int gap = g->gap_end - g->gap_start;
     if (gap >= need) return;
@@ -141,12 +184,16 @@ static void gap_grow(Gap *g, int need) {
     g->size     = nsz;
 }
 
-/* 
- * lightweight single-character gap shifts.
- * gap_shift_right: moves gap one position to the right (copies 1 byte)
- * gap_shift_left:  moves gap one position to the left  (copies 1 byte)
- *
- * Defined before gap_move so gap_move can call them inline for ±1 moves.
+/**
+ * @brief Move the gap position one position to the right.
+ * 
+ * Copies the single byte immediately after the gap to the first byte of the gap, then advances
+ * both @c gap_start and @c gap_end by one. This is the fast path called by gap_move for delta of
+ * +1. 
+ * 
+ * Does nothing if the gap is already at the end of the buffer.
+ * 
+ * @param g Pointer to the Gap buffer.
  */
 static void gap_shift_right(Gap *g) {
     if (g->gap_end >= g->size) return;
@@ -155,6 +202,17 @@ static void gap_shift_right(Gap *g) {
     g->gap_end++;
 }
  
+/**
+ * @brief Move the gap one position to the left.
+ *
+ * Copies the single byte immediately before the gap to the last byte of the gap, then decrements 
+ * both @c gap_start and @c gap_end by one. This is thefast path called by gap_move() for a delta 
+ * of -1.
+ *
+ * Does nothing if the gap is already at the start of the buffer.
+ *
+ * @param g Pointer to the Gap buffer.
+ */
 static void gap_shift_left(Gap *g) {
     if (g->gap_start <= 0) return;
     g->gap_end--;
@@ -162,6 +220,15 @@ static void gap_shift_left(Gap *g) {
     g->buf[g->gap_end] = g->buf[g->gap_start];
 }
 
+/**
+ * @brief Move the gap so that is start aligns with logical position @p pos.
+ * 
+ * Uses gap_shift_left() / gap_shift_right() for single-step moves, and
+ * @c memmove for larger jumps to minimise per-character overhead.
+ * 
+ * @param g Pointer to the Gap buffer.
+ * @param pos Target logical position for @c gap_start (0 ... gap_len(g)).
+ */
 static void gap_move(Gap *g, int pos) {
     if (pos == g->gap_start) return;
     if (pos < g->gap_start) {
@@ -185,12 +252,31 @@ static void gap_move(Gap *g, int pos) {
     }
 }
 
+/**
+ * @brief Insert a single character into the Gap buffer at logical position @p pos.
+ * 
+ * Grows the gap if necessary, moves the gap to @p pos, then writes @p c into the first gap
+ * slot and advances @c gap_start.
+ * 
+ * @param g Pointer to the Gap buffer.
+ * @param pos Logical position of the index to insert at (0 ... gap_len(g)).
+ * @param c Character to insert.
+ */
 static void gap_insert(Gap *g, int pos, char c) {
     gap_grow(g, 1);
     gap_move(g, pos);
     g->buf[g->gap_start++] = c;
 }
 
+/**
+ * @brief Delete the character at the logical position @p pos.
+ * 
+ * Moves the gap to @p pos, then expands the gap by one byte to the right, effectively discarding
+ * the character the follows the gap.
+ * 
+ * @param g Pointer to the Gap buffer.
+ * @param pos Logical positon of the index of the character to remove (0 ... gap_len(g)).
+ */
 static void gap_delete(Gap *g, int pos) {
     gap_move(g, pos);
     if (g->gap_end < g->size) g->gap_end++;
@@ -198,6 +284,25 @@ static void gap_delete(Gap *g, int pos) {
 
 // --- Load Configurations ---
 
+/**
+ * @brief Load user settings from @c ~/.orpheusrc.
+ * 
+ * Reads key=value from the user's home directory config file, skipping blank lines and lines with
+ * @c #. Recognized keys and the global variables they populate.
+ * 
+ * | Key               | Variable        |
+ * |-------------------|-----------------|
+ * | tab_width         | TAB_WIDTH       |
+ * | show_line_numbers | SHOW_LINE_NUMBERS |
+ * | auto_indent       | AUTO_INDENT     |
+ * | show_statusbar    | SHOW_STATUSBAR  |
+ * | cursor_style      | CURSOR_STYLE    |
+ * | color_scheme      | COLOR_SCHEME    |
+ * | gutter_width      | GUTTER_WIDTH    |
+ * | key_delay         | KEY_DELAY       |
+ * 
+ * If the file does not exist the function returns silently and all settings retain their defaults.
+ */
 void load_config(void) {
     char path[512];
     snprintf(path, sizeof(path), "%s/.orpheusrc", getenv("HOME"));
@@ -285,7 +390,17 @@ static int     cur_buf   = 0;   // index of active buffer
 #define E (*E_ptr)
 static Buffer *E_ptr;
 
-// Switch to buffer index i, clamped to valid range.
+/**
+ * @brief Make the buffer @p i the active buffer, clamping to the valid range.
+ * 
+ * Updates @c cur_bug and the convenience pointer @c E_ptr. If @p i is negative the last buffer is
+ * selected. If i is >= @c buf_count the first buffer is selected providing wrap around 
+ * navigation,
+ * 
+ * Does nothing if no buffers are open.
+ * 
+ * @param i The desired buffer index.
+ */
 static void switch_buffer(int i) {
     if (buf_count == 0) return;
     if (i < 0) i = buf_count - 1;
@@ -296,8 +411,16 @@ static void switch_buffer(int i) {
 
 // --- helpers ---
 
-// count newlines before logical position pos  ->  line number (0-based)
-// Still used for arbitrary positions (search, goto, auto-indent …).
+/**
+ * @brief Cinvert a logical character offest to a zero-based line number.
+ * 
+ * Counts every newline character in the active buffer before @p pos. This is an O(n) scan. Prefer
+ * to use the cached @c E.current_line where possible, falling back to this only for arbitrary
+ * position queries (search, goto, auto-indent, etc.).
+ * 
+ * @param pos Logical Character offset (0 ... gap_len(&E.ttext)).
+ * @return Zero-based line number containing @p pos.
+ */
 static int pos_to_line(int pos) {
     int ln = 0;
     for (int i = 0; i < pos; i++)
@@ -305,14 +428,18 @@ static int pos_to_line(int pos) {
     return ln;
 }
  
-/*
- * keep E.current_line in sync with E.cursor.
+/**
+ * @brief Incrementally synchronise @c E.current_line after a cursor move.
  *
- * Avoid a full O(n) scan whenever possible:
- *   • Moving right by 1: if the character we stepped over was '\n', +1.
- *   • Moving left  by 1: if the character we stepped back over was '\n', -1.
- *   • Larger jumps (up/down/page/home/end/goto) call pos_to_line() once
- *     and cache the result, which is still only one scan per key-press.
+ * Avoids a full O(n) scan whenever possible:
+ * - Moving right by 1: if the character stepped over was @c '\\n', increments
+ *   @c E.current_line by 1.
+ * - Moving left by 1: if the character stepped back over was @c '\\n', decrements
+ *   @c E.current_line by 1.
+ * - Larger jumps: calls pos_to_line() once and caches the result.
+ * 
+ * @param old_cursor Cursor position before the move.
+ * @param new_cursor Cursor position after the move.
  */
 static void update_current_line_delta(int old_cursor, int new_cursor) {
     int delta = new_cursor - old_cursor;
@@ -330,7 +457,15 @@ static void update_current_line_delta(int old_cursor, int new_cursor) {
     }
 }
 
-// return logical position of start of line ln
+/**
+ * @brief Return the logical position of the first character of line @p ln.
+ * 
+ * Scans the buffer from the beginning, counting newlines until @p ln is reached. Returns 0 for
+ * line 0 and the total buffer length for a line index beyond the last line.
+ * 
+ * @param ln Zero-based line number. 
+ * @return Logical character offset of the first character on line @p ln.
+ */
 static int line_start(int ln) {
     int p = 0, len = gap_len(&E.text);
     for (int l = 0; l < ln && p < len; p++)
@@ -338,24 +473,50 @@ static int line_start(int ln) {
     return p;
 }
 
-// length of line ln (not counting newline)
+/**
+ * @biref Return the number of characters on line @p ln, excluding the newline.
+ * 
+ * @param ln Zero-base line number.
+ * @return Character count of line @p ln (newline not included).
+ */
 static int line_len(int ln) {
     int s = line_start(ln), e = s, len = gap_len(&E.text);
     while (e < len && gap_char(&E.text, e) != '\n') e++;
     return e - s;
 }
 
-// total number of lines — O(1): return cached value
+/**
+ * @brief Returns the total number of lines in the active buffer.
+ * 
+ * Returns the cached @c E.line_count value maintained incrementally by
+ * update_stats() and rebuild_line_count(), making this an O(1) call.
+ * 
+ * @return Total line count (always >= 1)
+ */
 static int total_lines(void) {
     return E.line_count;
 }
 
-// Count total characters (including newlines)
+/**
+ * @brief Return the total number of characters in the active buffer.
+ *
+ * Includes all characters — printable, whitespace, and newlines.
+ *
+ * @return Total character count.
+ */
 static int count_chars(void) {
     return gap_len(&E.text);
 }
 
-// Full O(n) word rescan — only called when stats_dirty is set
+/**
+ * @brief Perform a full O(n) word count scan of the active buffer.
+ *
+ * A "word" is a maximal sequence of non-whitespace characters. This
+ * function is only invoked when @c E.stats_dirty is set. The result is
+ * cached by count_words() to avoid repeated scans within the same frame.
+ *
+ * @return Total word count.
+ */
 static int count_words_full(void) {
     int words = 0, in_word = 0, len = gap_len(&E.text);
     for (int i = 0; i < len; i++) {
@@ -366,7 +527,14 @@ static int count_words_full(void) {
     return words;
 }
 
-// Return cached word count, rescanning only when the buffer changed
+/**
+ * @brief Return the word count for the active buffer, rescanning only if needed.
+ *
+ * Returns the cached @c E.word_count unless @c E.stats_dirty is set, in which case it calls 
+ * count_words_full() and clears the dirty flag.
+ *
+ * @return Current word count.
+ */
 static int count_words(void) {
     if (E.stats_dirty) {
         E.word_count  = count_words_full();
@@ -375,25 +543,27 @@ static int count_words(void) {
     return E.word_count;
 }
 
-/*
- * Incremental stat update called on every insert/delete.
+/**
+ * @brief Incrementally update line and word statistics after a single edit.
  *
- * c        : the character that was inserted (+1) or deleted (-1 delta).
- * delta    : +1 for insert, -1 for delete.
+ * Called on every character insertion or deletion. Updates @c E.line_count
+ * exactly when a newline is involved and sets @c E.stats_dirty to trigger a
+ * deferred word rescan on the next draw frame.
  *
- * line_count is updated exactly here so total_lines() is always O(1).
- * word_count is harder to do perfectly incrementally (word boundaries
- * depend on neighbours), so we set stats_dirty and let count_words()
- * do one full rescan on the next draw — still only once per frame.
+ * @param c     The character that was inserted or deleted.
+ * @param delta +1 for an insertion, -1 for a deletion.
  */
 static void update_stats(char c, int delta) {
     if (c == '\n') E.line_count += delta;
     E.stats_dirty = 1;
 }
 
-/*
- * Rebuild line_count from scratch.  Called after load_file() and
- * whenever a bulk edit (cut/paste/delete-line) is done.
+/**
+ * @brief Rebuild the cached line count from scratch.
+ *
+ * Performs a full buffer scan to recount newlines and resets @c E.stats_dirty to force a word 
+ * rescan on the next draw. Called after load_file() and after bulk edits such as cut, paste, 
+ * and delete-line where incremental tracking would be error-prone.
  */
 static void rebuild_line_count(void) {
     int n = 1, len = gap_len(&E.text);
@@ -403,7 +573,15 @@ static void rebuild_line_count(void) {
     E.stats_dirty = 1; // force word rescan on next draw
 }
 
-// visual column for cursor on its line (tabs expanded)
+/**
+ * @brief Compute the visual (display) column of the cursor on its current line.
+ *
+ * Expands tab characters to the next multiple of @c TAB_WIDTH so that the
+ * returned column reflects what the user actually sees on screen, not just the
+ * raw character offset.
+ *
+ * @return Zero-based visual column of @c E.cursor.
+ */
 static int cursor_vcol(void) {
     int ln  = E.current_line;
     int s   = line_start(ln);
@@ -416,6 +594,16 @@ static int cursor_vcol(void) {
     return col;
 }
 
+/**
+ * @brief Write a formatted message into the active buffer's status field.
+ *
+ * Accepts a printf-style format string and variadic arguments.  The result
+ * is stored in @c E.status and rendered on the command bar during the next
+ * call to refresh_screen().  The status is cleared after one frame.
+ *
+ * @param fmt printf-compatible format string.
+ * @param ... Additional arguments corresponding to @p fmt.
+ */
 static void set_status(const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
@@ -425,6 +613,16 @@ static void set_status(const char *fmt, ...) {
 
 // --- File I/O ---
 
+/**
+ * @brief Load a file from disk into the active buffer's Gap storage.
+ * 
+ * Open @p path for reading and appends each byte to the end of the Gap buffer. On success,
+ * rebuild_line_count() is called to initialize the cached statistics, and the cursor is
+ * rest to position 0.
+ * 
+ * @param path A File system path of the file to open.
+ * @return 1 on success, 0 if file could not be opened.
+ */
 static int load_file(const char *path) {
     FILE *f = fopen(path, "r");
     if (!f) return 0;
@@ -437,6 +635,15 @@ static int load_file(const char *path) {
     return 1;
 }
 
+/**
+ * @brief Write the contents of the active buffer to @c E.filename.
+ *
+ * Opens the file for writing (truncating it), iterates over every logical character in the 
+ * Gap buffer, and writes each byte. On success the dirty flag is cleared and a confirmation 
+ * is written to @c E.status.
+ *
+ * @return 1 on success, 0 if no filename is set or the file cannot be written.
+ */
 static int save_file(void) {
     if (!E.filename[0]) {
         set_status("No filename - use Ctrl-W to set one");
@@ -454,6 +661,13 @@ static int save_file(void) {
 
 // --- display ---
 
+/**
+ * @brief Adjust the viewport offsets so the cursor remainds visible.
+ * 
+ * Update @c E.row_off and @c E.col_off to ensure the current line and visual column are within
+ * the displayed text area. Accounts for the tab bar row when multiple buffers are open and for
+ * the status bar rows when @c SHOW_STATUS_BAR is enabled.
+ */
 static void adjust_scroll(void) {
     // Extra row used by the tab bar when more than one buffer is open
     int tab_rows = (buf_count > 1) ? 1 : 0;
@@ -467,6 +681,14 @@ static void adjust_scroll(void) {
     if (vcol >= E.col_off + E.cols - 6)     E.col_off = vcol - (E.cols - 6) + 1;
 }
 
+/**
+ * @brief Render the visible text rows, including the line-number gutter.
+ *
+ * Iterates over each visible row, drawing the line-number gutter (respecting @c SHOW_LINE_NUMBERS 
+ * and @c GUTTER_WIDTH) followed by the line's characters with horizontal scrolling and tab 
+ * expansion applied. Rows beyond the lastline display a @c ~ sentinel, matching traditional 
+ * text-editor conventions.
+ */
 static void draw_rows(void) {
     int total = total_lines();
     int tab_rows = (buf_count > 1) ? 1 : 0;
@@ -515,6 +737,13 @@ static void draw_rows(void) {
     }
 }
 
+/**
+ * @brief Render the buffer tab bar when more than one buffer is open.
+ *
+ * Draws a row of abbreviated buffer names above the status bar.  The active buffer's tab is 
+ * highlighted with bold+reverse video. Modified buffers show a @c + suffix. The function is a 
+ * no-op when only one buffer is open.
+ */
 static void draw_tabbar(void) {
     // Tab bar sits at E.rows - 3 when statusbar is shown, else E.rows - 1.
     // We only draw it when there is more than one buffer open.
@@ -550,6 +779,13 @@ static void draw_tabbar(void) {
     attroff(COLOR_PAIR(CP_STATUS));
 }
 
+/**
+ * @brief Render the status bar showing file info and cursor statistics.
+ *
+ * Displays the filename (or @c [No Name]), a dirty indicator, and on the
+ * right side: line number, column, total lines, word count, and character
+ * count.  Word count is lazily refreshed via count_words().
+ */
 static void draw_statusbar(void) {
     attron(COLOR_PAIR(CP_STATUS) | A_BOLD);
     move(E.rows - 2, 0);
@@ -575,6 +811,12 @@ static void draw_statusbar(void) {
     attroff(COLOR_PAIR(CP_STATUS) | A_BOLD);
 }
 
+/**
+ * @brief Render the command bar with keybinding hints and the status message.
+ *
+ * Draws the fixed keybinding cheatsheet on the bottom row.  If @c E.status is non-empty it is 
+ * overlaid right-aligned on the same row in bold, providing one-shot feedback to the user.
+ */
 static void draw_cmdbar(void) {
     attron(COLOR_PAIR(CP_CMDBAR));
     move(E.rows - 1, 0);
@@ -593,6 +835,13 @@ static void draw_cmdbar(void) {
     }
 }
 
+/**
+ * @brief Redraw the entire terminal display for the current frame.
+ *
+ * Calls adjust_scroll(), then draws text rows, the optional tab bar, status bar, and command bar.
+ * Finally positions the terminal cursor at the correct visual cell and flushes the update to 
+ * the screen via @c doupdate().
+ */
 static void refresh_screen(void) {
     adjust_scroll();
     int ln = E.current_line;
@@ -615,6 +864,17 @@ static void refresh_screen(void) {
 
 // --- Mini Input Line (search / goto) ---
 
+/**
+ * @brief Read a single-line string from the user via the command bar.
+ *
+ * Displays @p prompt on the bottom row and echoes characters as the user types. Backspace removes 
+ * the last character. Pressing Enter confirms. Pressing Escape cancels and returns 0.
+ *
+ * @param prompt Prompt string shown before the input area.
+ * @param out Buffer to receive the entered string (NUL-terminated).
+ * @param max Size of @p out in bytes, including the NUL terminator.
+ * @return 1 if the user confirmed a non-empty string, 0 if cancelled or empty.
+ */
 static int mini_input(const char *prompt, char *out, int max) {
     int len = 0;
     int input_row = E.rows - 1;
@@ -646,6 +906,13 @@ static int mini_input(const char *prompt, char *out, int max) {
 
 // --- Search ---
 
+/**
+ * @brief Interactive forward search (Ctrl-F).
+ *
+ * Prompts the user for a search term via mini_input(). If found, moves the cursor to the first 
+ * match at or after the current position (wrapping around the end of the buffer) and updates 
+ * @c E.search_term for repeat searches.  Sets @c E.status to indicate success or failure.
+ */
 static void do_find(void) {
     char term[256] = {0};
     if (!mini_input("Find: ", term, sizeof term)) {
@@ -679,17 +946,20 @@ static void do_find(void) {
 
 // --- Replace ---
 
-/*
- * do_replace: Find & Replace (Ctrl-R)
+/**
+ * @brief Interactive find-and-replace (Ctrl-R).
  *
- * Prompts for a search term, then a replacement string.
- * Then asks: A = replace All, N = replace Next only, Esc = cancel.
+ * Prompts the user for a search term and a replacement string via
+ * mini_input(), then asks whether to replace @b All occurrences or only the
+ * @b Next occurrence after the cursor. Pressing Escape at any prompt cancels
+ * the operation.
  *
- * For "replace next": replaces the first occurrence at or after the cursor.
- * For "replace all":  replaces every occurrence, reports the count.
+ * - "Replace All" scans from position 0 and replaces every match, reporting
+ *   the total count on completion.
+ * - "Replace Next" replaces the first match at or after the cursor (wrapping
+ *   around the buffer).
  *
- * Replacement is done by deleting the matched characters at the found
- * position and inserting the replacement string in their place.
+ * An empty replacement string is valid and deletes each matched substring.
  */
 static void do_replace(void) {
     char term[256]    = {0};
@@ -779,6 +1049,13 @@ static void do_replace(void) {
 
 // --- Cut & Paste ---
 
+/**
+ * @brief Cut (copy + delete) the current line into the clipboard (Ctrl-K).
+ *
+ * Copies the content of @c E.current_line (excluding the newline) into
+ * @c E.clipboard, then deletes the line and its trailing newline from the
+ * buffer. Rebuilds cached statistics and updates the cursor.
+ */
 static void cut_line(void) {
     int ln = E.current_line;
     int s = line_start(ln);
@@ -803,6 +1080,13 @@ static void cut_line(void) {
     set_status("Cut line");
 }
 
+/**
+ * @brief Paste the clipboard contents as a new line above the current line (Ctrl-U).
+ *
+ * Inserts the text stored in @c E.clipboard at the start of the current line,
+ * followed by a newline character. Does nothing and sets a status message if
+ * the clipboard is empty. Rebuilds cached statistics after the insertion.
+ */
 static void paste_line(void) {
     if (!E.cb_len) { set_status("Clipboard empty"); return; }
     int ln = E.current_line;
@@ -817,6 +1101,13 @@ static void paste_line(void) {
     set_status("Pasted");
 }
 
+/**
+ * @brief Delete the current line without copying it to the clipboard (Ctrl-D).
+ *
+ * Removes all characters on @c E.current_line plus its trailing newline.
+ * The cursor is moved to the start of the same line position (now occupied
+ * by the following line). Rebuilds cached statistics.
+ */
 static void delete_line(void) {
     int ln = E.current_line;
     int s = line_start(ln);
@@ -832,6 +1123,12 @@ static void delete_line(void) {
     set_status("Deleted line");
 }
 
+/**
+ * @brief Toggle visibility of the status and command bars (Ctrl-W).
+ *
+ * Flips @c SHOW_STATUSBAR between 0 and 1, then immediately redraws the
+ * screen so the change is visible without waiting for the next keypress.
+ */
 static void toggle_status(void) {
     SHOW_STATUSBAR = !SHOW_STATUSBAR;
     refresh_screen();
@@ -839,6 +1136,13 @@ static void toggle_status(void) {
 
 // --- Movement ---
 
+/**
+ * @brief Move the cursor one line up, preserving visual column where possible.
+ *
+ * Attempts to place the cursor at the same visual column on the previous line.
+ * If that column exceeds the line's length the cursor is placed at the end of
+ * the line. Moves to offset 0 when already on line 0.
+ */
 static void move_up(void) {
     int ln = E.current_line;
     if (ln == 0) { E.cursor = 0; E.current_line = 0; return; }
@@ -849,6 +1153,13 @@ static void move_up(void) {
     E.current_line = ln - 1;
 }
 
+/**
+ * @brief Move the cursor one line down, preserving visual column where possible.
+ *
+ * Attempts to place the cursor at the same visual column on the next line.
+ * If that column exceeds the line's length the cursor is placed at the end of
+ * the line.  Does nothing when already on the last line.
+ */
 static void move_down(void) {
     int ln = E.current_line;
     if (ln >= total_lines() - 1) return;
@@ -859,6 +1170,12 @@ static void move_down(void) {
     E.current_line = ln + 1;
 }
 
+/**
+ * @brief Move the cursor one character to the left.
+ *
+ * Decrements @c E.cursor by one and calls update_current_line_delta() to keep
+ * @c E.current_line in sync.  Does nothing at the start of the buffer.
+ */
 static void move_left(void) {
     if (E.cursor > 0) {
         int old = E.cursor;
@@ -866,7 +1183,13 @@ static void move_left(void) {
         update_current_line_delta(old, E.cursor);
     }
 }
- 
+
+/**
+ * @brief Move the cursor one character to the right.
+ *
+ * Increments @c E.cursor by one and calls update_current_line_delta() to keep
+ * @c E.current_line in sync.  Does nothing at the end of the buffer.
+ */
 static void move_right(void) {
     if (E.cursor < gap_len(&E.text)) {
         int old = E.cursor;
@@ -875,26 +1198,51 @@ static void move_right(void) {
     }
 }
 
+/**
+ * @brief Move the cursor to the first character of the current line (Home).
+ */
 static void move_line_start(void) {
     int ln = E.current_line;
     E.cursor = line_start(ln);
 }
 
+/**
+ * @brief Move the cursor past the last character of the current line (End).
+ */
 static void move_line_end(void) {
     int ln = E.current_line;
     E.cursor = line_start(ln) + line_len(ln);
 }
 
+/**
+ * @brief Scroll the view up by one full page (Page Up).
+ *
+ * Calls move_up() once per visible text row, effectively jumping the cursor
+ * up by the current viewport height.
+ */
 static void move_page_up(void) {
     int text_rows = E.rows - (SHOW_STATUSBAR ? 2 : 0);
     for (int i = 0; i < text_rows; i++) move_up();
 }
 
+/**
+ * @brief Scroll the view down by one full page (Page Down).
+ *
+ * Calls move_down() once per visible text row, effectively jumping the cursor
+ * down by the current viewport height.
+ */
 static void move_page_down(void) {
     int text_rows = E.rows - (SHOW_STATUSBAR ? 2 : 0);
     for (int i = 0; i < text_rows; i++) move_down();
 }
 
+/**
+ * @brief Prompt the user for a line number and jump to it (Ctrl-G).
+ *
+ * Reads a 1-based line number via mini_input(). The value is clamped to the
+ * valid range [1, total_lines()]. The cursor is moved to the start of the
+ * target line and @c E.current_line is updated accordingly.
+ */
 static void goto_line(void) {
     char buf[32];
     if (!mini_input("Go to line: ", buf, sizeof buf)) return;
@@ -910,6 +1258,17 @@ static void goto_line(void) {
 
 // --- Quit Confirmation ---
 
+/**
+ * @brief Ask the user to confirm quitting when there are unsaved changes.
+ *
+ * If the active buffer is clean (E.dirty == 0) the function returns 1
+ * immediately.  Otherwise it renders an inline prompt and waits for a keypress:
+ * - @c Q — quit without saving, returns 1.
+ * - @c S — save then quit, returns 1.
+ * - Any other key — cancel, returns 0.
+ *
+ * @return 1 if the editor should exit, 0 if the quit was cancelled.
+ */
 static int confirm_quit(void) {
     if (!E.dirty) return 1;
     move(E.rows - 1, 0);
@@ -927,6 +1286,20 @@ static int confirm_quit(void) {
 
 // --- Main Loop ---
 
+/**
+ * @brief Initialise the ncurses library and apply colour scheme settings.
+ *
+ * Calls @c initscr(), enables raw input, disables echo, enables the keypad,
+ * and sets the escape-sequence delay from @c KEY_DELAY. When the terminal
+ * supports colour and the scheme is not @c "mono", initialises five colour
+ * pairs (normal text, status bar, command bar, line numbers, search highlight)
+ * according to the @c COLOR_SCHEME global:
+ * - @c "dark"  — white on black palette.
+ * - @c "light" — black on white palette.
+ * - @c "default" — inherits the terminal's own colours.
+ *
+ * Finally sets the cursor shape via @c curs_set(CURSOR_STYLE).
+ */
 static void init_ncurses(void) {
     initscr();
     raw();
@@ -963,7 +1336,17 @@ static void init_ncurses(void) {
     curs_set(CURSOR_STYLE);
 }
 
-// Allocate and initialise one fresh buffer slot; returns its index.
+/**
+ * @brief Allocate and initialise a new buffer slot.
+ *
+ * Zeroes the next available entry in the @c buffers array, initialises its
+ * Gap storage, and sets sensible defaults for all counters. The new buffer
+ * becomes the last slot but is not made active; call switch_buffer() to focus
+ * it.
+ *
+ * @return The index of the newly created buffer, or -1 if @c MAX_BUFFERS has
+ *         been reached.
+ */
 static int new_buffer(void) {
     if (buf_count >= MAX_BUFFERS) return -1;
     int idx = buf_count++;
@@ -976,7 +1359,24 @@ static int new_buffer(void) {
     return idx;
 }
 
-// Handles Args. Returns 1 if not opening text editor, otherwise 0.
+/**
+ * @brief Parse command-line arguments and set up initial buffers.
+ *
+ * Handles three cases:
+ * - No arguments: opens a single empty unnamed buffer and returns 0.
+ * - @c -h / @c --help: prints usage information to stdout and returns 1.
+ * - @c -v / @c --version: prints version and build date to stdout and returns 1.
+ * - One or more filenames: opens each as its own buffer, loading content from
+ *   disk where possible, and returns 0.
+ *
+ * A return value of 1 signals that the editor should not start (the caller
+ * should exit after this function returns).
+ *
+ * @param argc Argument count from @c main().
+ * @param argv Argument vector from @c main().
+ * @return 1 if a terminal flag was handled and the editor should not start.
+ *         0 if the editor should proceed to its main loop.
+ */
 int handle_args(int argc, char *argv[]) {
     if (argc < 2) {
         // No file: one empty unnamed buffer
@@ -1043,6 +1443,22 @@ int handle_args(int argc, char *argv[]) {
     return 0;
 }
 
+/**
+ * @brief Program entry point for the Orpheus text editor.
+ *
+ * Execution order:
+ * 1. load_config() — read @c ~/.orpheusrc settings.
+ * 2. handle_args() — process CLI flags/filenames; exit early for @c --help /
+ *    @c --version.
+ * 3. init_ncurses() — set up the terminal.
+ * 4. Main event loop — redraw the screen, read one keypress, dispatch to the
+ *    appropriate handler, repeat until confirm_quit() returns true.
+ * 5. @c endwin() and Gap buffer cleanup on exit.
+ *
+ * @param argc Argument count.
+ * @param argv Argument vector.
+ * @return 0 on normal exit.
+ */
 int main(int argc, char *argv[]) {
     load_config();
 
