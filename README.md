@@ -1,16 +1,16 @@
-# **Orpheus**
+# Orpheus
 
 Orpheus is a small, lightweight text editor built using C and the ncurses library. It is designed
 for simplicity and efficiency in the terminal environment.
 
-## **Features**
+## Features
 
 * **Lightweight:** Minimal overhead for fast startup and operation.  
 * **Ncurses UI:** Native terminal integration.  
 * **Configurable:** Supports custom settings via a .orpheusrc file.  
 * **Smart Editing:** Features include auto-indentation and gap-buffer based text manipulation.
 
-## **Prerequisites**
+## Prerequisites
 
 To compile and run Orpheus, you need the following:
 
@@ -18,11 +18,11 @@ To compile and run Orpheus, you need the following:
 * ncurses development library (e.g., libncurses5-dev or ncurses-devel)  
 * make
 
-## **Building and Installation**
+## Building and Installation
 
 Use the provided Makefile to build, install, or clean the project:
 
-### **Build**
+### Build
 
 To compile the project:
 
@@ -30,7 +30,7 @@ To compile the project:
 make
 ```
 
-### **Install**
+### Install
 
 To install the binary to your system (default is /usr/local/bin):
 
@@ -38,7 +38,7 @@ To install the binary to your system (default is /usr/local/bin):
 sudo make install
 ```
 
-### **Uninstall**
+### Uninstall
 
 To remove the binary from your system:
 
@@ -46,7 +46,7 @@ To remove the binary from your system:
 sudo make uninstall
 ```
 
-### **Clean**
+### Clean
 
 To remove built objects and the binary:
 
@@ -54,7 +54,7 @@ To remove built objects and the binary:
 make clean
 ```
 
-## **Usage**
+## Usage
 
 ```Bash
 orp [file]
@@ -81,7 +81,7 @@ orp [file]
 | **Ctrl-P** | Go to previous tab |
 | **Ctrl-N** | Go to next tab |
 
-## **Configuration**
+## Configuration
 
 You can customize Orpheus by creating a \~/.orpheusrc file. The format uses setting=value. Comments start with \#.
 
@@ -117,7 +117,7 @@ normal (default), 2 = very visible / block.
 
 * key_delay (int): The time it takes to wait for escape-sequence processing. Default 50.
 
-## **License**
+## License
 
 This project is licensed under the GNU General Public License v3.0 (GPL-3.0). See the
 [LICENSE](http://docs.google.com/LICENSE) file for details.
