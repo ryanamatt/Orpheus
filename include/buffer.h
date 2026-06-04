@@ -48,6 +48,9 @@ typedef struct {
     int  current_line;          /**< Zero-based line the cursor is on. */
 } Buffer;
 
+/**
+ * @brief All states associated with the context of the editor.
+ */
 typedef struct {
     Buffer buffers[MAX_BUFFERS];    /**< Array of all open buffers. */
     int buf_count;                  /**< Number of buffers currently open. */
