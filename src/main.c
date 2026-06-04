@@ -78,13 +78,13 @@
 #include <ncurses.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 #include <ctype.h>
 #include <errno.h>
 #include "version.h"
 #include "config.h"
 #include "gap.h"
 #include "buffer.h"
+#include "fileio.h"
 
 // --- Color Pairs ---
 #define CP_NORMAL   1
@@ -92,54 +92,6 @@
 #define CP_CMDBAR   3
 #define CP_LNUM     4
 #define CP_SEARCH   5
-
-// --- File I/O ---
-
-/**
- * @brief Load a file from disk into the active buffer's Gap storage.
- * 
- * Open @p path for reading and appends each byte to the end of the Gap buffer. On success,
- * rebuild_line_count() is called to initialize the cached statistics, and the cursor is
- * rest to position 0.
- * 
- * @param path A File system path of the file to open.
- * @return 1 on success, 0 if file could not be opened.
- */
-static int load_file(const char *path) {
-    FILE *f = fopen(path, "r");
-    if (!f) return 0;
-    int c;
-    while ((c = fgetc(f)) != EOF)
-        gap_insert(&E.text, gap_len(&E.text), (char)c);
-    fclose(f);
-    rebuild_line_count();   // initialise cached line_count + stats_dirty
-    E.current_line = 0;
-    return 1;
-}
-
-/**
- * @brief Write the contents of the active buffer to @c E.filename.
- *
- * Opens the file for writing (truncating it), iterates over every logical character in the 
- * Gap buffer, and writes each byte. On success the dirty flag is cleared and a confirmation 
- * is written to @c E.status.
- *
- * @return 1 on success, 0 if no filename is set or the file cannot be written.
- */
-static int save_file(void) {
-    if (!E.filename[0]) {
-        set_status("No filename - use Ctrl-W to set one");
-        return 0;
-    }
-    FILE *f = fopen(E.filename, "w");
-    if (!f) { set_status("Cannot write: %s", strerror(errno)); return 0; }
-    int len = gap_len(&E.text);
-    for (int i = 0; i < len; i++) fputc(gap_char(&E.text, i), f);
-    fclose(f);
-    E.dirty = 0;
-    set_status("Saved \"%s\"  (%d bytes)", E.filename, len);
-    return 1;
-}
 
 // --- display ---
 
