@@ -29,7 +29,7 @@
  * and sets the escape-sequence delay from @c KEY_DELAY. When the terminal
  * supports colour and the scheme is not @c "mono", initialises five colour
  * pairs (normal text, status bar, command bar, line numbers, search highlight)
- * according to the @c COLOR_SCHEME global:
+ * according to the @c Ccfg_ptr->OLOR_SCHEME global:
  * - @c "dark"  — white on black palette.
  * - @c "light" — black on white palette.
  * - @c "default" — inherits the terminal's own colours.
@@ -77,45 +77,51 @@ void init_ncurses(Config *cfg_ptr) {
 /**
  * @brief Adjust the viewport offsets so the cursor remainds visible.
  * 
- * Update @c E.row_off and @c E.col_off to ensure the current line and visual column are within
- * the displayed text area. Accounts for the tab bar row when multiple buffers are open and for
- * the status bar rows when @c SHOW_STATUS_BAR is enabled.
+ * Update @c edcon->buffer->row_off and @c edcon->buffer->col_off to ensure the current line and 
+ * visual column are within the displayed text area. Accounts for the tab bar row when multiple 
+ * buffers are open and for the status bar rows when @c cfg_ptr->SHOW_STATUS_BAR is enabled.
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void adjust_scroll(Config *cfg_ptr) {
+void adjust_scroll(Config *cfg_ptr, EditorContext *edcon) {
     // Extra row used by the tab bar when more than one buffer is open
-    int tab_rows = (buf_count > 1) ? 1 : 0;
-    int cur_line = E.current_line;
-    int vcol = cursor_vcol(cfg_ptr);
-    int text_rows = E.rows - (cfg_ptr->show_statusbar ? 2 : 0) - tab_rows;   // status + command bar
+    int tab_rows = (edcon->buf_count > 1) ? 1 : 0;
+    int cur_line = edcon->buffer->current_line;
+    int vcol = cursor_vcol(cfg_ptr, edcon);
+    int text_rows = edcon->buffer->rows - (cfg_ptr->show_statusbar ? 2 : 0) - tab_rows;   // status + command bar
 
-    if (cur_line < E.row_off)               E.row_off = cur_line;
-    if (cur_line >= E.row_off + text_rows)  E.row_off = cur_line - text_rows + 1;
-    if (vcol < E.col_off)                   E.col_off = vcol;
-    if (vcol >= E.col_off + E.cols - 6)     E.col_off = vcol - (E.cols - 6) + 1;
+    if (cur_line < edcon->buffer->row_off)
+        edcon->buffer->row_off = cur_line;
+    if (cur_line >= edcon->buffer->row_off + text_rows)
+        edcon->buffer->row_off = cur_line - text_rows + 1;
+    if (vcol < edcon->buffer->col_off)
+        edcon->buffer->col_off = vcol;
+    if (vcol >= edcon->buffer->col_off + edcon->buffer->cols - 6)
+        edcon->buffer->col_off = vcol - (edcon->buffer->cols - 6) + 1;
 }
 
 /**
  * @brief Render the visible text rows, including the line-number gutter.
  *
- * Iterates over each visible row, drawing the line-number gutter (respecting @c SHOW_LINE_NUMBERS 
- * and @c GUTTER_WIDTH) followed by the line's characters with horizontal scrolling and tab 
+ * Iterates over each visible row, drawing the line-number gutter (respecting @c cfg_ptr->SHOW_LINE_NUMBERS 
+ * and @c cfg_ptr-> GUTTER_WIDTH) followed by the line's characters with horizontal scrolling and tab 
  * expansion applied. Rows beyond the lastline display a @c ~ sentinel, matching traditional 
  * text-editor conventions.
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void draw_rows(Config *cfg_ptr) {
-    int total = total_lines();
-    int tab_rows = (buf_count > 1) ? 1 : 0;
-    int text_rows = E.rows - (cfg_ptr->show_statusbar ? 2 : 0) - tab_rows;
+void draw_rows(Config *cfg_ptr, EditorContext *edcon) {
+    int total = total_lines(edcon);
+    int tab_rows = (edcon->buf_count > 1) ? 1 : 0;
+    int text_rows = edcon->buffer->rows - (cfg_ptr->show_statusbar ? 2 : 0) - tab_rows;
 
     char fmt[16];
     snprintf(fmt, sizeof(fmt), "%%%dd ", cfg_ptr->gutter_width - 1);
 
     for (int y = 0; y < text_rows; y++) {
-        int ln = y + E.row_off;
+        int ln = y + edcon->buffer->row_off;
         move(y, 0);
 
         // line number gutter
@@ -131,19 +137,20 @@ void draw_rows(Config *cfg_ptr) {
 
         attron(COLOR_PAIR(CP_NORMAL));
         if (ln < total) {
-            int s = line_start(ln);
-            int end = s + line_len(ln);
+            int s = line_start(edcon, ln);
+            int end = s + line_len(edcon, ln);
             int col = 0;
             for (int i = s; i < end; i++) {
-                char c = gap_char(&E.text, i);
+                char c = gap_char(&edcon->buffer->text, i);
                 if (c == '\t') {
                     int next = (col / cfg_ptr->tab_width + 1) * cfg_ptr->tab_width;
-                    while (col < next && col - E.col_off < E.cols - 5) {
-                        if (col >= E.col_off) addch(' ');
+                    while (col < next && col - edcon->buffer->col_off < edcon->buffer->cols - 5) {
+                        if (col >= edcon->buffer->col_off) addch(' ');
                         col++;
                     }
                 } else {
-                    if (col >= E.col_off && col - E.col_off < E.cols - 5)
+                    if (col >= edcon->buffer->col_off 
+                            && col - edcon->buffer->col_off < edcon->buffer->cols - 5)
                         addch((unsigned char)c);
                     col++;
                 }
@@ -162,21 +169,22 @@ void draw_rows(Config *cfg_ptr) {
  * no-op when only one buffer is open.
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void draw_tabbar(Config *cfg_ptr) {
+void draw_tabbar(Config *cfg_ptr, EditorContext *edcon) {
     // Tab bar sits at E.rows - 3 when statusbar is shown, else E.rows - 1.
     // We only draw it when there is more than one buffer open.
-    if (buf_count <= 1) return;
+    if (edcon->buf_count <= 1) return;
 
-    int row = E.rows - (cfg_ptr->show_statusbar ? 3 : 1);
+    int row = edcon->buffer->rows - (cfg_ptr->show_statusbar ? 3 : 1);
     attron(COLOR_PAIR(CP_STATUS));
     move(row, 0);
     clrtoeol();
 
     int x = 0;
-    for (int i = 0; i < buf_count && x < E.cols - 1; i++) {
-        const char *name = buffers[i].filename[0]
-                           ? buffers[i].filename : "[No Name]";
+    for (int i = 0; i < edcon->buf_count && x < edcon->buffer->cols - 1; i++) {
+        const char *name = edcon->buffers[i].filename[0]
+                           ? edcon->buffers[i].filename : "[No Name]";
         // Strip directory prefix for display
         const char *base = strrchr(name, '/');
         base = base ? base + 1 : name;
@@ -184,13 +192,13 @@ void draw_tabbar(Config *cfg_ptr) {
         char tab[64];
         int tlen = snprintf(tab, sizeof tab, " %s%s ",
                             base,
-                            buffers[i].dirty ? "+" : "");
+                            edcon->buffers[i].dirty ? "+" : "");
 
-        if (i == cur_buf)
+        if (i == edcon->cur_buf)
             attron(A_BOLD | A_REVERSE);
-        if (x + tlen < E.cols)
+        if (x + tlen < edcon->buffer->cols)
             mvprintw(row, x, "%s", tab);
-        if (i == cur_buf)
+        if (i == edcon->cur_buf)
             attroff(A_BOLD | A_REVERSE);
 
         x += tlen;
@@ -206,28 +214,29 @@ void draw_tabbar(Config *cfg_ptr) {
  * count.  Word count is lazily refreshed via count_words().
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void draw_statusbar(Config *cfg_ptr) {
+void draw_statusbar(Config *cfg_ptr, EditorContext *edcon) {
     attron(COLOR_PAIR(CP_STATUS) | A_BOLD);
-    move(E.rows - 2, 0);
-    int ln = E.current_line;
-    int col = cursor_vcol(cfg_ptr);
+    move(edcon->buffer->rows - 2, 0);
+    int ln = edcon->buffer->current_line;
+    int col = cursor_vcol(cfg_ptr, edcon);
 
-    int chars = count_chars();
-    int words = count_words();
+    int chars = count_chars(edcon);
+    int words = count_words(edcon);
 
     char left[128], right[128];
 
     snprintf(left,  sizeof left,  " %.40s%s",
-             E.filename[0] ? E.filename : "[No Name]",
-             E.dirty ? " [+]" : "");
+             edcon->buffer->filename[0] ? edcon->buffer->filename : "[No Name]",
+             edcon->buffer->dirty ? " [+]" : "");
 
     snprintf(right, sizeof right, "Ln %d, Col %d | %d lines | %d words %d chars ",
-             ln + 1, col + 1, total_lines(), words, chars);
+             ln + 1, col + 1, total_lines(edcon), words, chars);
 
-    int pad = E.cols - (int)strlen(left) - (int)strlen(right);
+    int pad = edcon->buffer->cols - (int)strlen(left) - (int)strlen(right);
     printw("%s", left);
-    for (int i = 0; i < pad && i < E.cols; i++) addch(' ');
+    for (int i = 0; i < pad && i < edcon->buffer->cols; i++) addch(' ');
     printw("%s", right);
     attroff(COLOR_PAIR(CP_STATUS) | A_BOLD);
 }
@@ -235,23 +244,26 @@ void draw_statusbar(Config *cfg_ptr) {
 /**
  * @brief Render the command bar with keybinding hints and the status message.
  *
- * Draws the fixed keybinding cheatsheet on the bottom row.  If @c E.status is non-empty it is 
- * overlaid right-aligned on the same row in bold, providing one-shot feedback to the user.
+ * Draws the fixed keybinding cheatsheet on the bottom row. If @c edcon->buffer->status is 
+ * non-empty it is  overlaid right-aligned on the same row in bold, providing one-shot feedback 
+ * to the user.
+ * 
+ * @param edcon The EditorContext Instance.
  */
-void draw_cmdbar(void) {
+void draw_cmdbar(EditorContext *edcon) {
     attron(COLOR_PAIR(CP_CMDBAR));
-    move(E.rows - 1, 0);
+    move(edcon->buffer->rows - 1, 0);
     printw(" ^S Save  ^Q Quit  ^F Find  ^R Repl  ^G Go-To  ^K Cut  ^U Paste  ^D Del-Ln  ^W Hide  ^N Next  ^P Prev");
     clrtoeol();
     attroff(COLOR_PAIR(CP_CMDBAR));
 
     // show one-shot status message on right side
-    if (E.status[0]) {
-        int slen = strlen(E.status);
-        int x    = E.cols - slen - 2;
+    if (edcon->buffer->status[0]) {
+        int slen = strlen(edcon->buffer->status);
+        int x = edcon->buffer->cols - slen - 2;
         if (x < 0) x = 0;
         attron(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
-        mvprintw(E.rows - 1, x, " %s ", E.status);
+        mvprintw(edcon->buffer->rows - 1, x, " %s ", edcon->buffer->status);
         attroff(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
     }
 }
@@ -264,23 +276,24 @@ void draw_cmdbar(void) {
  * the screen via @c doupdate().
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void refresh_screen(Config *cfg_ptr) {
-    adjust_scroll(cfg_ptr);
-    int ln = E.current_line;
-    int vcol = cursor_vcol(cfg_ptr);
+void refresh_screen(Config *cfg_ptr, EditorContext *edcon) {
+    adjust_scroll(cfg_ptr, edcon);
+    int ln = edcon->buffer->current_line;
+    int vcol = cursor_vcol(cfg_ptr, edcon);
 
-    draw_rows(cfg_ptr);
+    draw_rows(cfg_ptr, edcon);
     if (cfg_ptr->show_statusbar) {
-        draw_tabbar(cfg_ptr);
-        draw_statusbar(cfg_ptr);
-        draw_cmdbar();
+        draw_tabbar(cfg_ptr, edcon);
+        draw_statusbar(cfg_ptr, edcon);
+        draw_cmdbar(edcon);
     } else {
-        draw_tabbar(cfg_ptr);
+        draw_tabbar(cfg_ptr, edcon);
     }
 
     // position real cursor (tab bar does not shift text rows — it sits below)
-    move(ln - E.row_off, cfg_ptr->gutter_width + vcol - E.col_off);
+    move(ln - edcon->buffer->row_off, cfg_ptr->gutter_width + vcol - edcon->buffer->col_off);
     wnoutrefresh(stdscr);
     doupdate();
 }
@@ -292,8 +305,9 @@ void refresh_screen(Config *cfg_ptr) {
  * screen so the change is visible without waiting for the next keypress.
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void toggle_status(Config *cfg_ptr) {
+void toggle_status(Config *cfg_ptr, EditorContext *edcon) {
     cfg_ptr->show_statusbar = !cfg_ptr->show_statusbar;
-    refresh_screen(cfg_ptr);
+    refresh_screen(cfg_ptr, edcon);
 }

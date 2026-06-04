@@ -48,77 +48,116 @@ typedef struct {
     int  current_line;          /**< Zero-based line the cursor is on. */
 } Buffer;
 
-/** Array of all open buffers. */
-extern Buffer  buffers[MAX_BUFFERS];
-
-/** Number of buffers currently open. */
-extern int     buf_count;
-
-/** Index of the currently active buffer. */
-extern int     cur_buf;
- 
-/**
- * @brief Convenience macro — dereferences the active-buffer pointer.
- *
- * All code can write @c E.field instead of @c buffers[cur_buf].field.
- */
-#define E (*E_ptr)
-extern Buffer *E_ptr;
+typedef struct {
+    Buffer buffers[MAX_BUFFERS];    /**< Array of all open buffers. */
+    int buf_count;                  /**< Number of buffers currently open. */
+    int cur_buf;                    /**< Index of the currently active buffer. */
+    Buffer *buffer;                 /**< Dereferences the active-buffer pointer. */
+} EditorContext;
 
 /**
  * @brief Allocate and zero-initialise the next buffer slot.
+ * 
+ * @param edcon The EditorContext Instance.
  * @return Index of the new buffer, or -1 if MAX_BUFFERS is reached.
  */
-int  new_buffer(void);
+int new_buffer(EditorContext *edcon);
  
 /**
  * @brief Make buffer @p i the active buffer (wraps at both ends).
+ * 
+ * @param edcon The EditorContext Instance.
  * @param i Desired buffer index.
  */
-void switch_buffer(int i);
+void switch_buffer(EditorContext *edcon, int i);
 
-/** @brief Return logical position of the first character on line @p ln. */
-int  line_start(int ln);
+/** 
+ * @brief Return logical position of the first character on line @p ln. 
+ * 
+ * @param edcon The EditorContext Instance.
+ * */
+int  line_start(EditorContext *edcon, int ln);
  
-/** @brief Return the character count of line @p ln (newline excluded). */
-int  line_len(int ln);
+/** 
+ * @brief Return the character count of line @p ln (newline excluded). 
+ * 
+ * @param edcon The EditorContext Instance.
+ * */
+int  line_len(EditorContext *edcon, int ln);
  
-/** @brief Return the total number of lines (O(1) via cache). */
-int  total_lines(void);
+/** 
+ * @brief Return the total number of lines (O(1) via cache). 
+ * 
+ * @param edcon The EditorContext Instance.
+ * */
+int total_lines(EditorContext *edcon);
 
-/** @brief Full O(n) rebuild of the cached line count. */
-void rebuild_line_count(void);
+/** 
+ * @brief Full O(n) rebuild of the cached line count. 
+ * 
+ * @param edcon The EditorContext Instance.
+ * */
+void rebuild_line_count(EditorContext *edcon);
  
-/** @brief Return the total character count of the active buffer. */
-int  count_chars(void);
+/** 
+ * @brief Return the total character count of the active buffer. 
+ * 
+ * @param edcon The EditorContext Instance.
+ * */
+int count_chars(EditorContext *edcon);
 
-/** @brief Perform a full O(n) word count scan of the active buffer. */
-int count_words_full(void);
+/** 
+ * @brief Perform a full O(n) word count scan of the active buffer. 
+ * 
+ * @param edcon The EditorContext Instance.
+ * */
+int count_words_full(EditorContext *edcon);
  
-/** @brief Return word count, rescanning only when stats_dirty is set. */
-int  count_words(void);
+/** 
+ * @brief Return word count, rescanning only when stats_dirty is set. 
+ * 
+ * @param edcon The EditorContext Instance.
+ * */
+int  count_words(EditorContext *edcon);
  
-/** @brief Incrementally update line and word stats after a single edit. */
-void update_stats(char c, int delta);
+/** 
+ * @brief Incrementally update line and word stats after a single edit. 
+ * 
+ * @param edcon The EditorContext Instance.
+ * */
+void update_stats(EditorContext *edcon, char c, int delta);
  
 /** 
  * @brief Return the visual (display) column of the cursor. 
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  * */
-int  cursor_vcol(Config *cfg_ptr);
+int cursor_vcol(Config *cfg_ptr, EditorContext *edcon);
  
-/** @brief Convert a logical offset to a zero-based line number (O(n)). */
-int  pos_to_line(int pos);
+/** 
+ * @brief Convert a logical offset to a zero-based line number (O(n)). 
+ * 
+ * @param edcon The EditorContext Instance.
+ * */
+int pos_to_line(EditorContext *edcon, int pos);
  
 /**
  * @brief Incrementally synchronise E.current_line after a cursor move.
+ * 
+ * @param edcon The EditorContext Instance.
  * @param old_cursor Position before the move.
  * @param new_cursor Position after the move.
  */
-void update_current_line_delta(int old_cursor, int new_cursor);
+void update_current_line_delta(EditorContext *edcon, int old_cursor, int new_cursor);
  
-/** @brief Write a formatted message into E.status (printf-style). */
-void set_status(const char *fmt, ...);
+/** 
+ * @brief Write a formatted message into E.status (printf-style). 
+ * 
+ * @param edcon The EditorContext Instance.
+ * @param fmt printf-compatible format string.
+ * @param ... Additional arguments corresponding to @p fmt.
+ * */
+void set_status(EditorContext *edcon, const char *fmt, ...);
 
 #endif // BUFFER_H

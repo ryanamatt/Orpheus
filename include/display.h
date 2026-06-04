@@ -43,45 +43,55 @@ void init_ncurses(Config *cfg_ptr);
  * @brief Adjust the viewport offsets so the cursor remainds visible.
  *
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void adjust_scroll(Config *cfg_ptr);
+void adjust_scroll(Config *cfg_ptr, EditorContext *edcon);
 
 /**
  * @brief Render the visible text rows, including the line-number gutter.
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void draw_rows(Config *cfg_ptr);
+void draw_rows(Config *cfg_ptr, EditorContext *edcon);
 
 /**
  * @brief Render the buffer tab bar when more than one buffer is open.
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void draw_tabbar(Config *cfg_ptr);
+void draw_tabbar(Config *cfg_ptr, EditorContext *edcon);
 
 /**
  * @brief Render the status bar showing file info and cursor statistics.
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void draw_statusbar(Config *cfg_ptr);
+void draw_statusbar(Config *cfg_ptr, EditorContext *edcon);
 
-/** @brief Render the command bar with keybinding hints and the status message. */
-void draw_cmdbar(void);
+/** 
+ * @brief Render the command bar with keybinding hints and the status message. 
+ * 
+ * @param edcon The EditorContext Instance.
+ * */
+void draw_cmdbar(EditorContext *edcon);
 
 /**
  * @brief Redraw the entire terminal display for the current frame.
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void refresh_screen(Config *cfg_ptr);
+void refresh_screen(Config *cfg_ptr, EditorContext *edcon);
 
 /**
  * @brief Toggle visibility of the status and command bars (Ctrl-W).
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void toggle_status(Config *cfg_ptr);
+void toggle_status(Config *cfg_ptr, EditorContext *edcon);
 
 #endif // DISPLAY_H

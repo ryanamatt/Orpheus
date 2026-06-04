@@ -102,17 +102,18 @@
  * A return value of 1 signals that the editor should not start (the caller
  * should exit after this function returns).
  *
+ * @param edcon The EditorContext Instance.
  * @param argc Argument count from @c main().
  * @param argv Argument vector from @c main().
  * @return 1 if a terminal flag was handled and the editor should not start.
  *         0 if the editor should proceed to its main loop.
  */
-int handle_args(int argc, char *argv[]) {
+int handle_args(EditorContext *edcon, int argc, char *argv[]) {
     if (argc < 2) {
         // No file: one empty unnamed buffer
-        new_buffer();
-        switch_buffer(0);
-        set_status("orpheus - no file. Ctrl-S to save, Ctrl-Q to quit.");
+        new_buffer(edcon);
+        switch_buffer(edcon, 0);
+        set_status(edcon, "orpheus - no file. Ctrl-S to save, Ctrl-Q to quit.");
         return 0;
     }
 
@@ -154,22 +155,22 @@ int handle_args(int argc, char *argv[]) {
 
     // orp [file ...] — open each file as its own buffer
     for (int i = 1; i < argc; i++) {
-        int idx = new_buffer();
+        int idx = new_buffer(edcon);
         if (idx < 0) {
             fprintf(stderr, "orpheus: too many files (max %d)\n", MAX_BUFFERS);
             break;
         }
         // Temporarily point E at this buffer so load_file / set_status work
-        cur_buf = idx;
-        E_ptr   = &buffers[idx];
-        strncpy(E.filename, argv[i], sizeof(E.filename) - 1);
-        E.filename[sizeof(E.filename) - 1] = '\0';
-        if (!load_file(E.filename))
-            set_status("New file: \"%s\"", E.filename);
+        edcon->cur_buf = idx;
+        edcon->buffer = &edcon->buffers[idx];
+        strncpy(edcon->buffer->filename, argv[i], sizeof(edcon->buffer->filename) - 1);
+        edcon->buffer->filename[sizeof(edcon->buffer->filename) - 1] = '\0';
+        if (!load_file(edcon))
+            set_status(edcon, "New file: \"%s\"", edcon->buffer->filename);
         else
-            set_status("Opened \"%s\"", E.filename);
+            set_status(edcon, "Opened \"%s\"", edcon->buffer->filename);
     }
-    switch_buffer(0);
+    switch_buffer(edcon, 0);
     return 0;
 }
 
@@ -190,197 +191,198 @@ int handle_args(int argc, char *argv[]) {
  * @return 0 on normal exit.
  */
 int main(int argc, char *argv[]) {
+    EditorContext edcon_ctx = {0};
+    EditorContext *edcon = &edcon_ctx;
+
     Config cfg;
     config_defaults(&cfg);
     load_config(&cfg);
 
     // If handle_args returns 1 it was a flag like --help; exit early.
-    if (handle_args(argc, argv)) return 0;
+    if (handle_args(edcon, argc, argv)) return 0;
 
     init_ncurses(&cfg);
-    getmaxyx(stdscr, E.rows, E.cols);
+    getmaxyx(stdscr, edcon->buffer->rows, edcon->buffer->cols);
 
     while (1) {
-        getmaxyx(stdscr, E.rows, E.cols);
+        getmaxyx(stdscr, edcon->buffer->rows, edcon->buffer->cols);
         // Keep terminal size in sync for all buffers
-        for (int i = 0; i < buf_count; i++) {
-            buffers[i].rows = E.rows;
-            buffers[i].cols = E.cols;
+        for (int i = 0; i < edcon->buf_count; i++) {
+            edcon->buffers[i].rows = edcon->buffer->rows;
+            edcon->buffers[i].cols = edcon->buffer->cols;
         }
-        refresh_screen(&cfg);
-        E.status[0] = '\0'; // clear status after one frame
+        refresh_screen(&cfg, edcon);
+        edcon->buffer->status[0] = '\0'; // clear status after one frame
 
         int c = getch();
 
         switch (c) {
         // Quit
         case ('q' & 0x1f): // Ctrl-Q
-            if (confirm_quit()) goto done;
+            if (confirm_quit(edcon)) goto done;
             break;
 
         // Save
         case ('s' & 0x1f): // Ctrl-S
-            if (!E.filename[0]) {
+            if (!edcon->buffer->filename[0]) {
                 char buf[256];
-                if (mini_input("Save as: ", buf, sizeof buf)) {
-                    strncpy(E.filename, buf, sizeof(E.filename));
-                    E.search_term[sizeof(E.search_term) - 1] = '\0';
-                    save_file();
+                if (mini_input(edcon, "Save as: ", buf, sizeof buf)) {
+                    strncpy(edcon->buffer->filename, buf, sizeof(edcon->buffer->filename));
+                    edcon->buffer->search_term[sizeof(edcon->buffer->search_term) - 1] = '\0';
+                    save_file(edcon);
                 }
-            } else save_file();
+            } else save_file(edcon);
             break;
 
         // Find
         case ('f' & 0x1f): // Ctrl-F
-            do_find();
+            do_find(edcon);
             break;
 
         // Replace
         case ('r' & 0x1f): // Ctrl-R
-            do_replace();
+            do_replace(edcon);
             break;
 
         // Go to Line
         case ('g' & 0x1f): // Ctrl-G
-            goto_line();
+            goto_line(edcon);
             break;
 
         // Cut / Paste / Delete
-        case ('k' & 0x1f): cut_line();   break;
-        case ('u' & 0x1f): paste_line(); break;
-        case ('d' & 0x1f): delete_line(); break;
+        case ('k' & 0x1f): cut_line(edcon);   break;
+        case ('u' & 0x1f): paste_line(edcon); break;
+        case ('d' & 0x1f): delete_line(edcon); break;
 
         // Toggle Status
-        case ('w' & 0x1f): toggle_status(&cfg); break;
+        case ('w' & 0x1f): toggle_status(&cfg, edcon); break;
 
         case ('o' & 0x1f): { // Ctrl-O — new empty buffer
             char fname[256];
-            if (mini_input("Open file (blank for new): ", fname, sizeof fname) && fname[0]) {
-                int idx = new_buffer();
+            if (mini_input(edcon, "Open file (blank for new): ", fname, sizeof fname) && fname[0]) {
+                int idx = new_buffer(edcon);
                 if (idx < 0) {
-                    set_status("Too many buffers open (max %d)", MAX_BUFFERS);
+                    set_status(edcon, "Too many buffers open (max %d)", MAX_BUFFERS);
                 } else {
-                    switch_buffer(idx);
-                    strncpy(E.filename, fname, sizeof(E.filename) - 1);
-                    E.filename[sizeof(E.filename) - 1] = '\0';
-                    if (!load_file(E.filename))
-                        set_status("New file: \"%s\"", E.filename);
+                    switch_buffer(edcon, idx);
+                    strncpy(edcon->buffer->filename, fname, sizeof(edcon->buffer->filename));
+                    edcon->buffer->filename[sizeof(edcon->buffer->filename) - 1] = '\0';
+                    if (!load_file(edcon))
+                        set_status(edcon, "New file: \"%s\"", edcon->buffer->filename);
                     else
-                        set_status("Opened \"%s\"", E.filename);
+                        set_status(edcon, "Opened \"%s\"", edcon->buffer->filename);
                 }
             }
             else {
                 // blank input - open empty unnamed buffer.
-                int idx = new_buffer();
+                int idx = new_buffer(edcon);
                 if (idx < 0) {
-                    set_status("Too many buffers open (max %d)", MAX_BUFFERS);
+                    set_status(edcon, "Too many buffers open (max %d)", MAX_BUFFERS);
                 } else {
-                    switch_buffer(idx);
-                    set_status("New buffer %d/%d  [No Name]", cur_buf + 1, buf_count);
+                    switch_buffer(edcon, idx);
+                    set_status(edcon, "New buffer %d/%d  [No Name]", edcon->cur_buf + 1, edcon->buf_count);
                 }
             break;
             }
         }
 
         case ('n' & 0x1f): // Ctrl-N — next buffer
-            if (buf_count > 1) {
-                switch_buffer(cur_buf + 1);
-                set_status("Buffer %d/%d: %s",
-                           cur_buf + 1, buf_count,
-                           E.filename[0] ? E.filename : "[No Name]");
+            if (edcon->buf_count > 1) {
+                switch_buffer(edcon, edcon->cur_buf + 1);
+                set_status(edcon, "Buffer %d/%d: %s",
+                           edcon->cur_buf + 1, edcon->buf_count,
+                           edcon->buffer->filename[0] ? edcon->buffer->filename : "[No Name]");
             } else {
-                set_status("Only one buffer open");
+                set_status(edcon, "Only one buffer open");
             }
             break;
 
         case ('p' & 0x1f): // Ctrl-P — previous buffer
-            if (buf_count > 1) {
-                switch_buffer(cur_buf - 1);
-                set_status("Buffer %d/%d: %s",
-                           cur_buf + 1, buf_count,
-                           E.filename[0] ? E.filename : "[No Name]");
+            if (edcon->buf_count > 1) {
+                switch_buffer(edcon, edcon->cur_buf - 1);
+                set_status(edcon, "Buffer %d/%d: %s",
+                           edcon->cur_buf + 1, edcon->buf_count,
+                           edcon->buffer->filename[0] ? edcon->buffer->filename : "[No Name]");
             } else {
-                set_status("Only one buffer open");
+                set_status(edcon, "Only one buffer open");
             }
             break;
 
         // Movement
-        case KEY_UP:         move_up(&cfg);        break;
-        case KEY_DOWN:       move_down(&cfg);      break;
-        case KEY_LEFT:       move_left();      break;
-        case KEY_RIGHT:      move_right();     break;
+        case KEY_UP:         move_up(&cfg, edcon);          break;
+        case KEY_DOWN:       move_down(&cfg, edcon);        break;
+        case KEY_LEFT:       move_left(edcon);              break;
+        case KEY_RIGHT:      move_right(edcon);             break;
         case KEY_HOME:
-        case ('a' & 0x1f):   move_line_start(); break;
+        case ('a' & 0x1f):   move_line_start(edcon);        break;
         case KEY_END:
-        case ('e' & 0x1f):   move_line_end();   break;
-        case KEY_PPAGE:      move_page_up(&cfg);     break;
-        case KEY_NPAGE:      move_page_down(&cfg);   break;
+        case ('e' & 0x1f):   move_line_end(edcon);          break;
+        case KEY_PPAGE:      move_page_up(&cfg, edcon);     break;
+        case KEY_NPAGE:      move_page_down(&cfg, edcon);   break;
 
         // Editing
         case KEY_BACKSPACE:
         case 127:
         case '\b':
-            if (E.cursor > 0) {
-                char deleted = gap_char(&E.text, E.cursor - 1);
-                if (E.text.gap_start == E.cursor)
-                    gap_shift_left(&E.text);
-                else
-                    gap_delete(&E.text, E.cursor - 1);
-                int old = E.cursor;
-                E.cursor--;
-                update_current_line_delta(old, E.cursor);
-                update_stats(deleted, -1);
-                E.dirty = 1;
+            if (edcon->buffer->cursor > 0) {
+                char deleted = gap_char(&edcon->buffer->text, edcon->buffer->cursor - 1);
+                gap_delete(&edcon->buffer->text, edcon->buffer->cursor - 1);
+                int old = edcon->buffer->cursor;
+                edcon->buffer->cursor--;
+                update_current_line_delta(edcon, old, edcon->buffer->cursor);
+                update_stats(edcon, deleted, -1);
+                edcon->buffer->dirty = 1;
             }
             break;
 
         case KEY_DC: // Delete Key
-            if (E.cursor < gap_len(&E.text)) {
-                gap_delete(&E.text, E.cursor);
-                E.dirty = 1;
+            if (edcon->buffer->cursor < gap_len(&edcon->buffer->text)) {
+                gap_delete(&edcon->buffer->text, edcon->buffer->cursor);
+                edcon->buffer->dirty = 1;
             }
             break;
 
         case '\t':
             for (int i = 0; i < cfg.tab_width; i++) {
-                gap_insert(&E.text, E.cursor, ' ');
-                E.cursor++;
-                update_stats(' ', +1);
+                gap_insert(&edcon->buffer->text, edcon->buffer->cursor, ' ');
+                edcon->buffer->cursor++;
+                update_stats(edcon, ' ', +1);
             }
-            E.dirty = 1;
+            edcon->buffer->dirty = 1;
             break;
 
         case '\n':
         case KEY_ENTER:
-            gap_insert(&E.text, E.cursor, '\n');
-            E.cursor++;
-            update_stats('\n', +1);
-            E.current_line++;
+            gap_insert(&edcon->buffer->text, edcon->buffer->cursor, '\n');
+            edcon->buffer->cursor++;
+            update_stats(edcon, '\n', +1);
+            edcon->buffer->current_line++;
 
             if (cfg.auto_indent) {
-                int ln = E.current_line - 1;
-                int s = line_start(ln);
-                int end = s + line_len(ln);
+                int ln = edcon->buffer->current_line - 1;
+                int s = line_start(edcon, ln);
+                int end = s + line_len(edcon, ln);
                 int ws = s;
-                while (ws < end && (gap_char(&E.text, ws) == ' ' || gap_char(&E.text, ws) == '\t'))
+                while (ws < end && (gap_char(&edcon->buffer->text, ws) == ' ' 
+                    || gap_char(&edcon->buffer->text, ws) == '\t'))
                     ws++;
                 int indent = ws - s;
                 for (int i = 0; i < indent; i++) {
-                    char wc = gap_char(&E.text, s + i);
-                    gap_insert(&E.text, E.cursor, wc);
-                    E.cursor++;
-                    update_stats(wc, +1);
+                    char wc = gap_char(&edcon->buffer->text, s + i);
+                    gap_insert(&edcon->buffer->text, edcon->buffer->cursor, wc);
+                    edcon->buffer->cursor++;
+                    update_stats(edcon, wc, +1);
                 }
             }
-            E.dirty = 1;
+            edcon->buffer->dirty = 1;
             break;
 
         default:
             if (c >= 32 && c < 256 && c != 127) {
-                gap_insert(&E.text, E.cursor, (char)c);
-                E.cursor++;
-                update_stats((char)c, +1);
-                E.dirty = 1;
+                gap_insert(&edcon->buffer->text, edcon->buffer->cursor, (char)c);
+                edcon->buffer->cursor++;
+                update_stats(edcon, (char)c, +1);
+                edcon->buffer->dirty = 1;
             }
             break;
         }
@@ -388,7 +390,7 @@ int main(int argc, char *argv[]) {
 
 done:
     endwin();
-    for (int i = 0; i < buf_count; i++)
-        gap_free(&buffers[i].text);
+    for (int i = 0; i < edcon->buf_count; i++)
+        gap_free(&edcon->buffers[i].text);
     return 0;
 }
