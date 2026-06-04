@@ -284,3 +284,16 @@ void refresh_screen(Config *cfg_ptr) {
     wnoutrefresh(stdscr);
     doupdate();
 }
+
+/**
+ * @brief Toggle visibility of the status and command bars (Ctrl-W).
+ *
+ * Flips @c SHOW_STATUSBAR between 0 and 1, then immediately redraws the
+ * screen so the change is visible without waiting for the next keypress.
+ * 
+ * @param cfg_ptr A pointer to the Config Instance.
+ */
+void toggle_status(Config *cfg_ptr) {
+    cfg_ptr->show_statusbar = !cfg_ptr->show_statusbar;
+    refresh_screen(cfg_ptr);
+}

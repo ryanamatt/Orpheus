@@ -72,12 +72,16 @@ void draw_cmdbar(void);
 
 /**
  * @brief Redraw the entire terminal display for the current frame.
- *
- * Adjusts scroll offsets, draws text rows, optional tab bar, status bar,
- * and command bar, then positions the hardware cursor and calls doupdate().
  * 
  * @param cfg_ptr A pointer to the Config Instance.
  */
 void refresh_screen(Config *cfg_ptr);
+
+/**
+ * @brief Toggle visibility of the status and command bars (Ctrl-W).
+ * 
+ * @param cfg_ptr A pointer to the Config Instance.
+ */
+void toggle_status(Config *cfg_ptr);
 
 #endif // DISPLAY_H
