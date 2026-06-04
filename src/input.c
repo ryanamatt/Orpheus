@@ -27,6 +27,192 @@
 #include "fileio.h"
 
 /**
+ * @brief Handles the Main Input.
+ * 
+ * This is where all keys for typing characters, navigation and everything in between are 
+ * handled.
+ * 
+ * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
+ * @return 0, False to stop the main programming if user quits. 1 to continue the programming
+ */
+int main_input(Config *cfg_ptr, EditorContext *edcon) {
+    int c = getch();
+
+    switch (c) {
+    // Quit
+    case ('q' & 0x1f): // Ctrl-Q
+        if (confirm_quit(edcon)) return 0;
+        break;
+
+    // Save
+    case ('s' & 0x1f): // Ctrl-S
+        if (!edcon->buffer->filename[0]) {
+            char buf[256];
+            if (mini_input(edcon, "Save as: ", buf, sizeof buf)) {
+                strncpy(edcon->buffer->filename, buf, sizeof(edcon->buffer->filename));
+                edcon->buffer->search_term[sizeof(edcon->buffer->search_term) - 1] = '\0';
+                save_file(edcon);
+            }
+        } else save_file(edcon);
+        break;
+
+    // Find
+    case ('f' & 0x1f): // Ctrl-F
+        do_find(edcon);
+        break;
+
+    // Replace
+    case ('r' & 0x1f): // Ctrl-R
+        do_replace(edcon);
+        break;
+
+    // Go to Line
+    case ('g' & 0x1f): // Ctrl-G
+        goto_line(edcon);
+        break;
+
+    // Cut / Paste / Delete
+    case ('k' & 0x1f): cut_line(edcon);   break;
+    case ('u' & 0x1f): paste_line(edcon); break;
+    case ('d' & 0x1f): delete_line(edcon); break;
+
+    // Toggle Status
+    case ('w' & 0x1f): toggle_status(cfg_ptr, edcon); break;
+
+    case ('o' & 0x1f): { // Ctrl-O — new empty buffer
+        char fname[256];
+        if (mini_input(edcon, "Open file (blank for new): ", fname, sizeof fname) && fname[0]) {
+            int idx = new_buffer(edcon);
+            if (idx < 0) {
+                set_status(edcon, "Too many buffers open (max %d)", MAX_BUFFERS);
+            } else {
+                switch_buffer(edcon, idx);
+                strncpy(edcon->buffer->filename, fname, sizeof(edcon->buffer->filename));
+                edcon->buffer->filename[sizeof(edcon->buffer->filename) - 1] = '\0';
+                if (!load_file(edcon))
+                    set_status(edcon, "New file: \"%s\"", edcon->buffer->filename);
+                else
+                    set_status(edcon, "Opened \"%s\"", edcon->buffer->filename);
+            }
+        }
+        else {
+            // blank input - open empty unnamed buffer.
+            int idx = new_buffer(edcon);
+            if (idx < 0) {
+                set_status(edcon, "Too many buffers open (max %d)", MAX_BUFFERS);
+            } else {
+                switch_buffer(edcon, idx);
+                set_status(edcon, "New buffer %d/%d  [No Name]", edcon->cur_buf + 1, edcon->buf_count);
+            }
+        break;
+        }
+    }
+
+    case ('n' & 0x1f): // Ctrl-N — next buffer
+        if (edcon->buf_count > 1) {
+            switch_buffer(edcon, edcon->cur_buf + 1);
+            set_status(edcon, "Buffer %d/%d: %s",
+                        edcon->cur_buf + 1, edcon->buf_count,
+                        edcon->buffer->filename[0] ? edcon->buffer->filename : "[No Name]");
+        } else {
+            set_status(edcon, "Only one buffer open");
+        }
+        break;
+
+    case ('p' & 0x1f): // Ctrl-P — previous buffer
+        if (edcon->buf_count > 1) {
+            switch_buffer(edcon, edcon->cur_buf - 1);
+            set_status(edcon, "Buffer %d/%d: %s",
+                        edcon->cur_buf + 1, edcon->buf_count,
+                        edcon->buffer->filename[0] ? edcon->buffer->filename : "[No Name]");
+        } else {
+            set_status(edcon, "Only one buffer open");
+        }
+        break;
+
+    // Movement
+    case KEY_UP:         move_up(cfg_ptr, edcon);          break;
+    case KEY_DOWN:       move_down(cfg_ptr, edcon);        break;
+    case KEY_LEFT:       move_left(edcon);              break;
+    case KEY_RIGHT:      move_right(edcon);             break;
+    case KEY_HOME:
+    case ('a' & 0x1f):   move_line_start(edcon);        break;
+    case KEY_END:
+    case ('e' & 0x1f):   move_line_end(edcon);          break;
+    case KEY_PPAGE:      move_page_up(cfg_ptr, edcon);     break;
+    case KEY_NPAGE:      move_page_down(cfg_ptr, edcon);   break;
+
+    // Editing
+    case KEY_BACKSPACE:
+    case 127:
+    case '\b':
+        if (edcon->buffer->cursor > 0) {
+            char deleted = gap_char(&edcon->buffer->text, edcon->buffer->cursor - 1);
+            gap_delete(&edcon->buffer->text, edcon->buffer->cursor - 1);
+            int old = edcon->buffer->cursor;
+            edcon->buffer->cursor--;
+            update_current_line_delta(edcon, old, edcon->buffer->cursor);
+            update_stats(edcon, deleted, -1);
+            edcon->buffer->dirty = 1;
+        }
+        break;
+
+    case KEY_DC: // Delete Key
+        if (edcon->buffer->cursor < gap_len(&edcon->buffer->text)) {
+            gap_delete(&edcon->buffer->text, edcon->buffer->cursor);
+            edcon->buffer->dirty = 1;
+        }
+        break;
+
+    case '\t':
+        for (int i = 0; i < cfg_ptr->tab_width; i++) {
+            gap_insert(&edcon->buffer->text, edcon->buffer->cursor, ' ');
+            edcon->buffer->cursor++;
+            update_stats(edcon, ' ', +1);
+        }
+        edcon->buffer->dirty = 1;
+        break;
+
+    case '\n':
+    case KEY_ENTER:
+        gap_insert(&edcon->buffer->text, edcon->buffer->cursor, '\n');
+        edcon->buffer->cursor++;
+        update_stats(edcon, '\n', +1);
+        edcon->buffer->current_line++;
+
+        if (cfg_ptr->auto_indent) {
+            int ln = edcon->buffer->current_line - 1;
+            int s = line_start(edcon, ln);
+            int end = s + line_len(edcon, ln);
+            int ws = s;
+            while (ws < end && (gap_char(&edcon->buffer->text, ws) == ' ' 
+                || gap_char(&edcon->buffer->text, ws) == '\t'))
+                ws++;
+            int indent = ws - s;
+            for (int i = 0; i < indent; i++) {
+                char wc = gap_char(&edcon->buffer->text, s + i);
+                gap_insert(&edcon->buffer->text, edcon->buffer->cursor, wc);
+                edcon->buffer->cursor++;
+                update_stats(edcon, wc, +1);
+            }
+        }
+        edcon->buffer->dirty = 1;
+        break;
+
+    default:
+        if (c >= 32 && c < 256 && c != 127) {
+            gap_insert(&edcon->buffer->text, edcon->buffer->cursor, (char)c);
+            edcon->buffer->cursor++;
+            update_stats(edcon, (char)c, +1);
+            edcon->buffer->dirty = 1;
+        }
+        break;
+    }
+    return 1;
+}
+
+/**
  * @brief Read a single-line string from the user via the command bar.
  *
  * Displays @p prompt on the bottom row and echoes characters as the user types. Backspace removes 

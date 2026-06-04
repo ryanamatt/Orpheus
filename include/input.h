@@ -24,6 +24,15 @@
 #include "buffer.h"
 
 /**
+ * @brief Handles the Main Input.
+ * 
+ * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
+ * @return 0, False to stop the main programming if user quits. 1 to continue the programming
+ */
+int main_input(Config *cfg_ptr, EditorContext *edcon);
+
+/**
  * @brief Read a single-line string from the user via the command bar.
  *
  * @param edcon The EditorContext Instance.
