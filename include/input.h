@@ -21,16 +21,18 @@
 #define INPUT_H
 
 #include "config.h"
+#include "buffer.h"
 
 /**
  * @brief Read a single-line string from the user via the command bar.
  *
+ * @param edcon The EditorContext Instance.
  * @param prompt Prompt string shown before the input area.
  * @param out Buffer to receive the entered string (NUL-terminated).
  * @param max Size of @p out in bytes, including the NUL terminator.
  * @return 1 if the user confirmed a non-empty string, 0 if cancelled or empty.
  */
-int mini_input(const char *prompt, char *out, int max);
+int mini_input(EditorContext *edcon, const char *prompt, char *out, int max);
 
 // --- Navigation --- 
 
@@ -38,61 +40,105 @@ int mini_input(const char *prompt, char *out, int max);
  * @brief Move the cursor one line up, preserving visual column where possible.
  *
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void move_up(Config *cfg_ptr);
+void move_up(Config *cfg_ptr, EditorContext *edcon);
 
 /**
  * @brief Move the cursor one line down, preserving visual column where possible.
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void move_down(Config *cfg_ptr);
+void move_down(Config *cfg_ptr, EditorContext *edcon);
 
-/** @brief Move the cursor one character to the left. */
-void move_left(void);
+/**
+ * @brief Move the cursor one character to the left. 
+ * 
+ * @param edcon The EditorContext Instance.
+ * */
+void move_left(EditorContext *edcon);
 
-/** @brief Move the cursor one character to the right. */
-void move_right(void);
+/** 
+ * @brief Move the cursor one character to the right. 
+ * 
+ * @param edcon The EditorContext Instance.
+*/
+void move_right(EditorContext *edcon);
 
-/** @brief Move the cursor to the first character of the current line (Home). */
-void move_line_start(void);
+/** 
+ * @brief Move the cursor to the first character of the current line (Home). 
+ * 
+ * @param edcon The EditorContext Instance.
+ * */
+void move_line_start(EditorContext *edcon);
 
-/** @brief Move the cursor past the last character of the current line (End). */
-void move_line_end(void);
+/** 
+ * @brief Move the cursor past the last character of the current line (End). 
+ * 
+ * @param edcon The EditorContext Instance.
+ * */
+void move_line_end(EditorContext *edcon);
 
 /**
  * @brief Scroll the view up by one full page (Page Up).
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void move_page_up(Config *cfg_ptr);
+void move_page_up(Config *cfg_ptr, EditorContext *edcon);
 
 /**
  * @brief Scroll the view down by one full page (Page Down).
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void move_page_down(Config *cfg_ptr);
+void move_page_down(Config *cfg_ptr, EditorContext *edcon);
 
 // --- Command Operations ---
 
-/** @brief Interactive forward search (Ctrl-F). */
-void do_find(void);
+/**
+ * @brief Interactive forward search (Ctrl-F).
+ * 
+ * @param edcon The EditorContext Instance.
+*/
+void do_find(EditorContext *edcon);
 
-/** @brief Interactive find-and-replace (Ctrl-R).*/
-void do_replace(void);
+/**
+ * @brief Interactive find-and-replace (Ctrl-R).
+ * 
+ * @param edcon The EditorContext Instance.
+ * */
+void do_replace(EditorContext *edcon);
 
-/**  @brief Cut (copy + delete) the current line into the clipboard (Ctrl-K). */
-void cut_line(void);
+/** 
+ * @brief Cut (copy + delete) the current line into the clipboard (Ctrl-K).
+ * 
+ * @param edcon The EditorContext Instance.
+ * */
+void cut_line(EditorContext *edcon);
 
-/** @brief Paste the clipboard contents as a new line above the current line (Ctrl-U). */
-void paste_line(void);
+/** 
+ * @brief Paste the clipboard contents as a new line above the current line (Ctrl-U). 
+ * 
+ * @param edcon The EditorContext Instance.
+ * */
+void paste_line(EditorContext *edcon);
 
-/** @brief Delete the current line without copying it to the clipboard (Ctrl-D). */
-void delete_line(void);
+/** 
+ * @brief Delete the current line without copying it to the clipboard (Ctrl-D). 
+ * 
+ * @param edcon The EditorContext Instance.
+ * */
+void delete_line(EditorContext *edcon);
 
-/** @brief Prompt the user for a line number and jump to it (Ctrl-G). */
-void goto_line(void);
+/** 
+ * @brief Prompt the user for a line number and jump to it (Ctrl-G). 
+ * 
+ * @param edcon The EditorContext Instance.
+ * */
+void goto_line(EditorContext *edcon);
 
 // --- Quit Confirmation ---
 
@@ -101,6 +147,6 @@ void goto_line(void);
  *
  * @return 1 if the editor should exit, 0 if the quit was cancelled.
  */
-int confirm_quit(void);
+int confirm_quit(EditorContext *edcon);
 
 #endif // INPUT_H

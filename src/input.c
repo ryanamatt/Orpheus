@@ -32,14 +32,15 @@
  * Displays @p prompt on the bottom row and echoes characters as the user types. Backspace removes 
  * the last character. Pressing Enter confirms. Pressing Escape cancels and returns 0.
  *
+ * @param edcon The EditorContext Instance.
  * @param prompt Prompt string shown before the input area.
  * @param out Buffer to receive the entered string (NUL-terminated).
  * @param max Size of @p out in bytes, including the NUL terminator.
  * @return 1 if the user confirmed a non-empty string, 0 if cancelled or empty.
  */
-int mini_input(const char *prompt, char *out, int max) {
+int mini_input(EditorContext *edcon, const char *prompt, char *out, int max) {
     int len = 0;
-    int input_row = E.rows - 1;
+    int input_row = edcon->buffer->rows - 1;
     out[0]  = '\0';
     move(input_row, 0);
     attron(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
@@ -76,15 +77,16 @@ int mini_input(const char *prompt, char *out, int max) {
  * the line. Moves to offset 0 when already on line 0.
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void move_up(Config *cfg_ptr) {
-    int ln = E.current_line;
-    if (ln == 0) { E.cursor = 0; E.current_line = 0; return; }
-    int vcol = cursor_vcol(cfg_ptr);
-    int s    = line_start(ln - 1);
-    int l    = line_len(ln - 1);
-    E.cursor = s + (vcol < l ? vcol : l);
-    E.current_line = ln - 1;
+void move_up(Config *cfg_ptr, EditorContext *edcon) {
+    int ln = edcon->buffer->current_line;
+    if (ln == 0) { edcon->buffer->cursor = 0; edcon->buffer->current_line = 0; return; }
+    int vcol = cursor_vcol(cfg_ptr, edcon);
+    int s = line_start(edcon, ln - 1);
+    int l = line_len(edcon, ln - 1);
+    edcon->buffer->cursor = s + (vcol < l ? vcol : l);
+    edcon->buffer->current_line = ln - 1;
 }
 
 /**
@@ -95,59 +97,66 @@ void move_up(Config *cfg_ptr) {
  * the line.  Does nothing when already on the last line.
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void move_down(Config *cfg_ptr) {
-    int ln = E.current_line;
-    if (ln >= total_lines() - 1) return;
-    int vcol = cursor_vcol(cfg_ptr);
-    int s    = line_start(ln + 1);
-    int l    = line_len(ln + 1);
-    E.cursor = s + (vcol < l ? vcol : l);
-    E.current_line = ln + 1;
+void move_down(Config *cfg_ptr, EditorContext *edcon) {
+    int ln = edcon->buffer->current_line;
+    if (ln >= total_lines(edcon) - 1) return;
+    int vcol = cursor_vcol(cfg_ptr, edcon);
+    int s = line_start(edcon, ln + 1);
+    int l = line_len(edcon, ln + 1);
+    edcon->buffer->cursor = s + (vcol < l ? vcol : l);
+    edcon->buffer->current_line = ln + 1;
 }
 
 /**
  * @brief Move the cursor one character to the left.
  *
- * Decrements @c E.cursor by one and calls update_current_line_delta() to keep
- * @c E.current_line in sync.  Does nothing at the start of the buffer.
+ * Decrements @c edcon->buffer->cursor by one and calls update_current_line_delta() to keep
+ * @c edcon->buffer->current_line in sync.  Does nothing at the start of the buffer.
  */
-void move_left(void) {
-    if (E.cursor > 0) {
-        int old = E.cursor;
-        E.cursor--;
-        update_current_line_delta(old, E.cursor);
+void move_left(EditorContext *edcon) {
+    if (edcon->buffer->cursor > 0) {
+        int old = edcon->buffer->cursor;
+        edcon->buffer->cursor--;
+        update_current_line_delta(edcon, old, edcon->buffer->cursor);
     }
 }
 
 /**
  * @brief Move the cursor one character to the right.
  *
- * Increments @c E.cursor by one and calls update_current_line_delta() to keep
- * @c E.current_line in sync.  Does nothing at the end of the buffer.
+ * Increments @c edcon->buffer->cursor by one and calls update_current_line_delta() to keep
+ * @c edcon->buffer->current_line in sync.  Does nothing at the end of the buffer.
+ * 
+ * @param edcon The EditorContext Instance.
  */
-void move_right(void) {
-    if (E.cursor < gap_len(&E.text)) {
-        int old = E.cursor;
-        E.cursor++;
-        update_current_line_delta(old, E.cursor);
+void move_right(EditorContext *edcon) {
+    if (edcon->buffer->cursor < gap_len(&edcon->buffer->text)) {
+        int old = edcon->buffer->cursor;
+        edcon->buffer->cursor++;
+        update_current_line_delta(edcon, old, edcon->buffer->cursor);
     }
 }
 
 /**
  * @brief Move the cursor to the first character of the current line (Home).
+ * 
+ * @param edcon The EditorContext Instance.
  */
-void move_line_start(void) {
-    int ln = E.current_line;
-    E.cursor = line_start(ln);
+void move_line_start(EditorContext *edcon) {
+    int ln = edcon->buffer->current_line;
+    edcon->buffer->cursor = line_start(edcon, ln);
 }
 
 /**
  * @brief Move the cursor past the last character of the current line (End).
+ * 
+ * @param edcon The EditorContext Instance.
  */
-void move_line_end(void) {
-    int ln = E.current_line;
-    E.cursor = line_start(ln) + line_len(ln);
+void move_line_end(EditorContext *edcon) {
+    int ln = edcon->buffer->current_line;
+    edcon->buffer->cursor = line_start(edcon, ln) + line_len(edcon, ln);
 }
 
 /**
@@ -157,10 +166,11 @@ void move_line_end(void) {
  * up by the current viewport height.
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void move_page_up(Config *cfg_ptr) {
-    int text_rows = E.rows - (cfg_ptr->show_statusbar ? 2 : 0);
-    for (int i = 0; i < text_rows; i++) move_up(cfg_ptr);
+void move_page_up(Config *cfg_ptr, EditorContext *edcon) {
+    int text_rows = edcon->buffer->rows - (cfg_ptr->show_statusbar ? 2 : 0);
+    for (int i = 0; i < text_rows; i++) move_up(cfg_ptr, edcon);
 }
 
 /**
@@ -170,10 +180,11 @@ void move_page_up(Config *cfg_ptr) {
  * down by the current viewport height.
  * 
  * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon The EditorContext Instance.
  */
-void move_page_down(Config *cfg_ptr) {
-    int text_rows = E.rows - (cfg_ptr->show_statusbar ? 2 : 0);
-    for (int i = 0; i < text_rows; i++) move_down(cfg_ptr);
+void move_page_down(Config *cfg_ptr, EditorContext *edcon) {
+    int text_rows = edcon->buffer->rows - (cfg_ptr->show_statusbar ? 2 : 0);
+    for (int i = 0; i < text_rows; i++) move_down(cfg_ptr, edcon);
 }
 
 // --- Command Operations ---
@@ -183,37 +194,37 @@ void move_page_down(Config *cfg_ptr) {
  *
  * Prompts the user for a search term via mini_input(). If found, moves the cursor to the first 
  * match at or after the current position (wrapping around the end of the buffer) and updates 
- * @c E.search_term for repeat searches.  Sets @c E.status to indicate success or failure.
+ * @c edcon->buffer->search_term for repeat searches. Sets @c edcon->buffer->status to indicate success or failure.
  */
-void do_find(void) {
+void do_find(EditorContext *edcon) {
     char term[256] = {0};
-    if (!mini_input("Find: ", term, sizeof term)) {
-        E.status[0] = '\0';
+    if (!mini_input(edcon, "Find: ", term, sizeof term)) {
+        edcon->buffer->status[0] = '\0';
         return;
     }
-    strncpy(E.search_term, term, sizeof(E.search_term) - 1);
-    E.search_term[sizeof(E.search_term) - 1] = '\0'; // Manually ensure null termination
-    E.last_search_pos = E.cursor;
+    strncpy(edcon->buffer->search_term, term, sizeof(edcon->buffer->search_term));
+    edcon->buffer->search_term[sizeof(edcon->buffer->search_term) - 1] = '\0';
+    edcon->buffer->last_search_pos = edcon->buffer->cursor;
 
-    int len = gap_len(&E.text);
+    int len = gap_len(&edcon->buffer->text);
     int tlen = strlen(term);
-    int start = (E.cursor + 1) % len;
+    int start = (edcon->buffer->cursor + 1) % len;
 
     for (int i = 0; i < len; i++) {
         int pos = (start + i) % len;
         int match = 1;
         for (int j = 0; j < tlen && match; j++) {
             int p2 = (pos + j) % len;
-            if (gap_char(&E.text, p2) != term[j]) match = 0;
+            if (gap_char(&edcon->buffer->text, p2) != term[j]) match = 0;
         }
         if (match) {
-            E.cursor = pos;
-            set_status("Found \"%s\"", term);
-            E.current_line = pos_to_line(pos);
+            edcon->buffer->cursor = pos;
+            set_status(edcon, "Found \"%s\"", term);
+            edcon->buffer->current_line = pos_to_line(edcon, pos);
             return;
         }
     }
-    set_status("Not found: \"%s\"", term);
+    set_status(edcon, "Not found: \"%s\"", term);
 }
 
 /**
@@ -230,23 +241,25 @@ void do_find(void) {
  *   around the buffer).
  *
  * An empty replacement string is valid and deletes each matched substring.
+ * 
+ * @param edcon The EditorContext Instance.
  */
-void do_replace(void) {
-    char term[256]    = {0};
-    char rep[256]     = {0};
+void do_replace(EditorContext *edcon) {
+    char term[256] = {0};
+    char rep[256] = {0};
 
-    if (!mini_input("Replace: ", term, sizeof term))
+    if (!mini_input(edcon, "Replace: ", term, sizeof term))
         return;
-    if (!mini_input("With: ", rep, sizeof rep)) {
+    if (!mini_input(edcon, "With: ", rep, sizeof rep)) {
         // empty replacement is valid — it means "delete the match"
         rep[0] = '\0';
     }
 
     int tlen = strlen(term);
     int rlen = strlen(rep);
-    if (tlen == 0) { set_status("Nothing to replace"); return; }
+    if (tlen == 0) { set_status(edcon, "Nothing to replace"); return; }
 
-    move(E.rows - 1, 0);
+    move(edcon->buffer->rows - 1, 0);
     attron(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
     clrtoeol();
     printw(" Replace [A]ll / [N]ext / Esc to cancel");
@@ -254,46 +267,46 @@ void do_replace(void) {
 
     refresh();
     int choice = getch();
-    if (choice == 27) { set_status("Replace cancelled"); return; }
+    if (choice == 27) { set_status(edcon, "Replace cancelled"); return; }
 
-    int total_len = gap_len(&E.text);
+    int total_len = gap_len(&edcon->buffer->text);
 
     if (choice == 'a' || choice == 'A') {
         // Replace All — scan from position 0, replace each match.
         int count = 0;
         int pos   = 0;
-        while (pos <= gap_len(&E.text) - tlen) {
+        while (pos <= gap_len(&edcon->buffer->text) - tlen) {
             int match = 1;
             for (int j = 0; j < tlen && match; j++)
-                if (gap_char(&E.text, pos + j) != term[j]) match = 0;
+                if (gap_char(&edcon->buffer->text, pos + j) != term[j]) match = 0;
 
             if (match) {
                 // delete tlen chars at pos
                 for (int j = 0; j < tlen; j++)
-                    gap_delete(&E.text, pos);
+                    gap_delete(&edcon->buffer->text, pos);
 
                 // insert replacement at pos 
                 for (int j = 0; j < rlen; j++)
-                    gap_insert(&E.text, pos + j, rep[j]);
+                    gap_insert(&edcon->buffer->text, pos + j, rep[j]);
 
                 pos += rlen;   // skip past what we just inserted
                 count++;
-                E.dirty = 1;
+                edcon->buffer->dirty = 1;
             } else {
                 pos++;
             }
         }
         if (count) {
-            rebuild_line_count();
-            E.current_line = pos_to_line(E.cursor);
-            set_status("Replaced %d occurrence%s", count, count == 1 ? "" : "s");
+            rebuild_line_count(edcon);
+            edcon->buffer->current_line = pos_to_line(edcon, edcon->buffer->cursor);
+            set_status(edcon, "Replaced %d occurrence%s", count, count == 1 ? "" : "s");
         } else {
-            set_status("Not found: \"%s\"", term);
+            set_status(edcon, "Not found: \"%s\"", term);
         }
     } else if (choice == 'n' || choice == 'N') {
         // Replace Next — search forward from cursor (wrapping).
-        total_len = gap_len(&E.text);
-        int start = E.cursor;
+        total_len = gap_len(&edcon->buffer->text);
+        int start = edcon->buffer->cursor;
         int found = -1;
 
         for (int i = 0; i < total_len; i++) {
@@ -302,109 +315,115 @@ void do_replace(void) {
 
             int match = 1;
             for (int j = 0; j < tlen && match; j++)
-                if (gap_char(&E.text, pos + j) != term[j]) match = 0;
+                if (gap_char(&edcon->buffer->text, pos + j) != term[j]) match = 0;
 
             if (match) { found = pos; break; }
         }
         if (found < 0) {
-            set_status("Not found: \"%s\"", term);
+            set_status(edcon, "Not found: \"%s\"", term);
             return;
         }
 
         for (int j = 0; j < tlen; j++)
-            gap_delete(&E.text, found);
+            gap_delete(&edcon->buffer->text, found);
 
         for (int j = 0; j < rlen; j++)
-            gap_insert(&E.text, found + j, rep[j]);
+            gap_insert(&edcon->buffer->text, found + j, rep[j]);
 
-        E.cursor = found + rlen;
-        E.dirty  = 1;
-        rebuild_line_count();
-        E.current_line = pos_to_line(E.cursor);
-        set_status("Replaced \"%s\" with \"%s\"", term, rep);
+        edcon->buffer->cursor = found + rlen;
+        edcon->buffer->dirty  = 1;
+        rebuild_line_count(edcon);
+        edcon->buffer->current_line = pos_to_line(edcon, edcon->buffer->cursor);
+        set_status(edcon, "Replaced \"%s\" with \"%s\"", term, rep);
     } else {
-        set_status("Replace cancelled");
+        set_status(edcon, "Replace cancelled");
     }
 }
 
 /**
  * @brief Cut (copy + delete) the current line into the clipboard (Ctrl-K).
  *
- * Copies the content of @c E.current_line (excluding the newline) into
- * @c E.clipboard, then deletes the line and its trailing newline from the
+ * Copies the content of @c edcon->buffer->current_line (excluding the newline) into
+ * @c edcon->buffer->clipboard, then deletes the line and its trailing newline from the
  * buffer. Rebuilds cached statistics and updates the cursor.
  */
-void cut_line(void) {
-    int ln = E.current_line;
-    int s = line_start(ln);
-    int len = line_len(ln);
+void cut_line(EditorContext *edcon) {
+    int ln = edcon->buffer->current_line;
+    int s = line_start(edcon, ln);
+    int len = line_len(edcon, ln);
     int end = s + len;
 
     // copy to clipboard
     int clen = 0;
     for (int i = s; i < end; i++)
-        if (clen < (int)sizeof(E.clipboard) - 1)
-            E.clipboard[clen++] = gap_char(&E.text, i);
-    E.clipboard[clen] = '\0';
-    E.cb_len = clen;
+        if (clen < (int)sizeof(edcon->buffer->clipboard) - 1)
+            edcon->buffer->clipboard[clen++] = gap_char(&edcon->buffer->text, i);
+    edcon->buffer->clipboard[clen] = '\0';
+    edcon->buffer->cb_len = clen;
 
     // delete line content + newline
-    int del = len + (end < gap_len(&E.text) ? 1 : 0);
-    for (int i = 0; i < del; i++) gap_delete(&E.text, s);
+    int del = len + (end < gap_len(&edcon->buffer->text) ? 1 : 0);
+    for (int i = 0; i < del; i++) gap_delete(&edcon->buffer->text, s);
 
-    E.cursor = s;
-    E.dirty  = 1;
-    rebuild_line_count();
-    E.current_line = pos_to_line(E.cursor);
-    set_status("Cut line");
+    edcon->buffer->cursor = s;
+    edcon->buffer->dirty  = 1;
+    rebuild_line_count(edcon);
+    edcon->buffer->current_line = pos_to_line(edcon, edcon->buffer->cursor);
+    set_status(edcon, "Cut line");
 }
 
 /**
  * @brief Paste the clipboard contents as a new line above the current line (Ctrl-U).
  *
- * Inserts the text stored in @c E.clipboard at the start of the current line,
+ * Inserts the text stored in @c edcon->buffer->clipboard at the start of the current line,
  * followed by a newline character. Does nothing and sets a status message if
  * the clipboard is empty. Rebuilds cached statistics after the insertion.
+ * 
+ * @param edcon The EditorContext Instance.
  */
-void paste_line(void) {
-    if (!E.cb_len) { set_status("Clipboard empty"); return; }
-    int ln = E.current_line;
-    int s  = line_start(ln);
+void paste_line(EditorContext *edcon) {
+    if (!edcon->buffer->cb_len) { set_status(edcon, "Clipboard empty"); return; }
+    int ln = edcon->buffer->current_line;
+    int s  = line_start(edcon, ln);
     // insert clipboard + newline
-    for (int i = 0; i < E.cb_len; i++) gap_insert(&E.text, s + i, E.clipboard[i]);
+    for (int i = 0; i < edcon->buffer->cb_len; i++) 
+        gap_insert(&edcon->buffer->text, s + i, edcon->buffer->clipboard[i]);
 
-    gap_insert(&E.text, s + E.cb_len, '\n');
-    E.cursor = s;
-    E.dirty  = 1;
-    rebuild_line_count();
+    gap_insert(&edcon->buffer->text, s + edcon->buffer->cb_len, '\n');
+    edcon->buffer->cursor = s;
+    edcon->buffer->dirty  = 1;
+    rebuild_line_count(edcon);
 
-    E.current_line = pos_to_line(E.cursor);
-    set_status("Pasted");
+    edcon->buffer->current_line = pos_to_line(edcon, edcon->buffer->cursor);
+    set_status(edcon, "Pasted");
 }
 
 /**
  * @brief Delete the current line without copying it to the clipboard (Ctrl-D).
  *
- * Removes all characters on @c E.current_line plus its trailing newline.
+ * Removes all characters on @c edcon->buffer->current_line plus its trailing newline.
  * The cursor is moved to the start of the same line position (now occupied
  * by the following line). Rebuilds cached statistics.
+ * 
+ * @param edcon The EditorContext Instance.
  */
-void delete_line(void) {
-    int ln = E.current_line;
-    int s = line_start(ln);
-    int len = line_len(ln);
+void delete_line(EditorContext *edcon) {
+    int ln = edcon->buffer->current_line;
+    int s = line_start(edcon, ln);
+    int len = line_len(edcon, ln);
     int end = s + len;
-    int del = len + (end < gap_len(&E.text) ? 1 : 0);
+    int del = len + (end < gap_len(&edcon->buffer->text) ? 1 : 0);
 
-    for (int i = 0; i < del; i++) gap_delete(&E.text, s);
+    for (int i = 0; i < del; i++) gap_delete(&edcon->buffer->text, s);
 
-    E.cursor = s;
-    if (E.cursor > gap_len(&E.text)) E.cursor = gap_len(&E.text);
-    E.dirty  = 1;
-    rebuild_line_count();
+    edcon->buffer->cursor = s;
+    if (edcon->buffer->cursor > gap_len(&edcon->buffer->text)) 
+        edcon->buffer->cursor = gap_len(&edcon->buffer->text);
+    edcon->buffer->dirty  = 1;
+    rebuild_line_count(edcon);
 
-    E.current_line = pos_to_line(E.cursor);
-    set_status("Deleted line");
+    edcon->buffer->current_line = pos_to_line(edcon, edcon->buffer->cursor);
+    set_status(edcon, "Deleted line");
 }
 
 /**
@@ -412,19 +431,21 @@ void delete_line(void) {
  *
  * Reads a 1-based line number via mini_input(). The value is clamped to the
  * valid range [1, total_lines()]. The cursor is moved to the start of the
- * target line and @c E.current_line is updated accordingly.
+ * target line and @c edcon->buffer->current_line is updated accordingly.
+ * 
+ * @param edcon The EditorContext Instance.
  */
-void goto_line(void) {
+void goto_line(EditorContext *edcon) {
     char buf[32];
-    if (!mini_input("Go to line: ", buf, sizeof buf)) return;
+    if (!mini_input(edcon, "Go to line: ", buf, sizeof buf)) return;
     int ln = atoi(buf) - 1;
     if (ln < 0) ln = 0;
-    int tot = total_lines();
+    int tot = total_lines(edcon);
     if (ln >= tot) ln = tot - 1;
-    int s = line_start(ln);
-    E.cursor = s;
-    E.current_line = ln;
-    set_status("Jumped to line %d", ln + 1);
+    int s = line_start(edcon, ln);
+    edcon->buffer->cursor = s;
+    edcon->buffer->current_line = ln;
+    set_status(edcon, "Jumped to line %d", ln + 1);
 }
 
 // --- Quit Confirmation ---
@@ -437,12 +458,13 @@ void goto_line(void) {
  * - @c Q — quit without saving, returns 1.
  * - @c S — save then quit, returns 1.
  * - Any other key — cancel, returns 0.
- *
+ * 
+ * @param edcon The EditorContext Instance.
  * @return 1 if the editor should exit, 0 if the quit was cancelled.
  */
-int confirm_quit(void) {
-    if (!E.dirty) return 1;
-    move(E.rows - 1, 0);
+int confirm_quit(EditorContext *edcon) {
+    if (!edcon->buffer->dirty) return 1;
+    move(edcon->buffer->rows - 1, 0);
     attron(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
     clrtoeol();
     printw(" Unsaved changes! Press Q to quit without saving, S to save, or Esc to cancel.");
@@ -451,7 +473,7 @@ int confirm_quit(void) {
 
     int c = getch();
     if (c == 'q' || c == 'Q') return 1;
-    if (c == 's' || c == 'S') { save_file(); return 1; }
-    E.status[0] = '\0';
+    if (c == 's' || c == 'S') { save_file(edcon); return 1; }
+    edcon->buffer->status[0] = '\0';
     return 0;
 }

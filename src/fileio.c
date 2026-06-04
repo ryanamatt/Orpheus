@@ -31,45 +31,46 @@
  * rebuild_line_count() is called to initialize the cached statistics, and the cursor is
  * rest to position 0.
  * 
- * @param path A File system path of the file to open.
+ * @param edcon The EditorContext Instance.
  * @return 1 on success, 0 if file could not be opened.
  */
-int load_file(const char *path) {
-    FILE *f = fopen(path, "r");
+int load_file(EditorContext *edcon) {
+    FILE *f = fopen(edcon->buffer->filename, "r");
     if (!f) return 0;
 
     int c;
     while ((c = fgetc(f)) != EOF)
-        gap_insert(&E.text, gap_len(&E.text), (char)c);
+        gap_insert(&edcon->buffer->text, gap_len(&edcon->buffer->text), (char)c);
         
     fclose(f);
-    rebuild_line_count();   // initialise cached line_count + stats_dirty
-    E.current_line = 0;
+    rebuild_line_count(edcon);   // initialise cached line_count + stats_dirty
+    edcon->buffer->current_line = 0;
     return 1;
 }
 
 /**
- * @brief Write the contents of the active buffer to @c E.filename.
+ * @brief Write the contents of the active buffer to @c edcon->buffer->filename.
  *
  * Opens the file for writing (truncating it), iterates over every logical character in the 
  * Gap buffer, and writes each byte. On success the dirty flag is cleared and a confirmation 
- * is written to @c E.status.
+ * is written to @c edcon->buffer->status.
  *
+ * @param edcon The EditorContext Instance.
  * @return 1 on success, 0 if no filename is set or the file cannot be written.
  */
-int save_file(void) {
-    if (!E.filename[0]) {
-        set_status("No filename - use Ctrl-W to set one");
+int save_file(EditorContext *edcon) {
+    if (!edcon->buffer->filename[0]) {
+        set_status(edcon, "No filename - use Ctrl-W to set one");
         return 0;
     }
-    FILE *f = fopen(E.filename, "w");
-    if (!f) { set_status("Cannot write: %s", strerror(errno)); return 0; }
+    FILE *f = fopen(edcon->buffer->filename, "w");
+    if (!f) { set_status(edcon, "Cannot write: %s", strerror(errno)); return 0; }
 
-    int len = gap_len(&E.text);
-    for (int i = 0; i < len; i++) fputc(gap_char(&E.text, i), f);
+    int len = gap_len(&edcon->buffer->text);
+    for (int i = 0; i < len; i++) fputc(gap_char(&edcon->buffer->text, i), f);
 
     fclose(f);
-    E.dirty = 0;
-    set_status("Saved \"%s\"  (%d bytes)", E.filename, len);
+    edcon->buffer->dirty = 0;
+    set_status(edcon, "Saved \"%s\"  (%d bytes)", edcon->buffer->filename, len);
     return 1;
 }

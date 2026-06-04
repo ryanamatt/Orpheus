@@ -22,15 +22,18 @@
 
 /**
  * @brief Load a file from disk into the active buffer.
- * @param path Filesystem path to open.
+ * 
+ * @param edcon The EditorContext Instance.
  * @return 1 on success, 0 if the file could not be opened.
  */
-int load_file(const char *path);
+int load_file(EditorContext *edcon);
 
 /**
- * @brief Write the active buffer to E.filename.
+ * @brief Write the active buffer to edcon->buffer->filename.
+ * 
+ * @param edcon The EditorContext Instance.
  * @return 1 on success, 0 on failure or missing filename.
  */
-int save_file(void);
+int save_file(EditorContext *edcon);
 
 #endif // FILEIO_H
