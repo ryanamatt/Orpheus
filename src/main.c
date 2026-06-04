@@ -82,17 +82,9 @@
 #include <ctype.h>
 #include <errno.h>
 #include "version.h"
+#include "config.h"
 
-// --- Constants / Settings ---
-
-int TAB_WIDTH = 4;          // spaces per Tab keypress
-int SHOW_LINE_NUMBERS = 1;  // show line-number gutter
-int AUTO_INDENT = 1;        // copy leading whitespace on Enter
-int SHOW_STATUSBAR = 1;     // show the status/command bar row
-int CURSOR_STYLE = 1;       // 0=invisible 1=normal 2=block
-char COLOR_SCHEME[32] = "default"; // "default" | "dark" | "light" | "mono"
-int GUTTER_WIDTH = 5;       // spaces from left to line-number gutter
-int KEY_DELAY = 50;         // wait time for escape-sequence processing
+// --- Constants ---
 
 #define MAX_STATUS  512
 #define CHUNK       64  // gap-buffer growth step (in chars)
@@ -281,81 +273,6 @@ static void gap_delete(Gap *g, int pos) {
     gap_move(g, pos);
     if (g->gap_end < g->size) g->gap_end++;
 }
-
-// --- Load Configurations ---
-
-/**
- * @brief Load user settings from @c ~/.orpheusrc.
- * 
- * Reads key=value from the user's home directory config file, skipping blank lines and lines with
- * @c #. Recognized keys and the global variables they populate.
- * 
- * | Key               | Variable        |
- * |-------------------|-----------------|
- * | tab_width         | TAB_WIDTH       |
- * | show_line_numbers | SHOW_LINE_NUMBERS |
- * | auto_indent       | AUTO_INDENT     |
- * | show_statusbar    | SHOW_STATUSBAR  |
- * | cursor_style      | CURSOR_STYLE    |
- * | color_scheme      | COLOR_SCHEME    |
- * | gutter_width      | GUTTER_WIDTH    |
- * | key_delay         | KEY_DELAY       |
- * 
- * If the file does not exist the function returns silently and all settings retain their defaults.
- */
-void load_config(void) {
-    char path[512];
-    snprintf(path, sizeof(path), "%s/.orpheusrc", getenv("HOME"));
-
-    FILE *pfile = fopen(path, "r");
-    if (!pfile) return; // no config file use defaults
-
-    char line[128];
-    while (fgets(line, sizeof(line), pfile)) {
-        if (line[0] == '#' || line[0] == '\n') continue;
-
-        char *key = strtok(line, "=");
-        char *val = strtok(NULL, "=");
-
-        if (key && val) {
-            if (strcmp(key, "tab_width") == 0) {
-                TAB_WIDTH = atoi(val);
-            }
-
-            else if (strcmp(key, "show_line_numbers") == 0) {
-                SHOW_LINE_NUMBERS = atoi(val);
-            }
-
-            else if (strcmp(key, "auto_indent") == 0) {
-                AUTO_INDENT = atoi(val);
-            }
-
-            else if (strcmp(key, "show_statusbar") == 0) {
-                SHOW_STATUSBAR = atoi(val);
-            }
-
-            else if (strcmp(key, "cursor_style") == 0) {
-                CURSOR_STYLE = atoi(val);
-            }
-
-            else if (strcmp(key, "color_scheme") == 0) {
-                val[strcspn(val, "\r\n")] = 0;
-                strncpy(COLOR_SCHEME, val, sizeof(COLOR_SCHEME - 1));
-                COLOR_SCHEME[sizeof(COLOR_SCHEME) - 1] = '\0';
-            }
-
-            else if (strcmp(key, "gutter_width") == 0) {
-                GUTTER_WIDTH = atoi(val);
-            }
-
-            else if (strcmp(key, "key_delay") == 0) {
-                KEY_DELAY = atoi(val);
-            }
-        }
-    }
-}
-
-// --- Editor State ---
 
 // --- Buffer State (one per open file) ---
 
@@ -579,16 +496,17 @@ static void rebuild_line_count(void) {
  * Expands tab characters to the next multiple of @c TAB_WIDTH so that the
  * returned column reflects what the user actually sees on screen, not just the
  * raw character offset.
- *
+ * 
+ * @param cfg_ptr A pointer to the Config Instance.
  * @return Zero-based visual column of @c E.cursor.
  */
-static int cursor_vcol(void) {
+static int cursor_vcol(Config *cfg_ptr) {
     int ln  = E.current_line;
     int s   = line_start(ln);
     int col = 0;
     for (int i = s; i < E.cursor; i++) {
         char c = gap_char(&E.text, i);
-        if (c == '\t') col = (col / TAB_WIDTH + 1) * TAB_WIDTH;
+        if (c == '\t') col = (col / cfg_ptr->tab_width + 1) * cfg_ptr->tab_width;
         else           col++;
     }
     return col;
@@ -667,13 +585,15 @@ static int save_file(void) {
  * Update @c E.row_off and @c E.col_off to ensure the current line and visual column are within
  * the displayed text area. Accounts for the tab bar row when multiple buffers are open and for
  * the status bar rows when @c SHOW_STATUS_BAR is enabled.
+ * 
+ * @param cfg_ptr A pointer to the Config Instance.
  */
-static void adjust_scroll(void) {
+static void adjust_scroll(Config *cfg_ptr) {
     // Extra row used by the tab bar when more than one buffer is open
     int tab_rows = (buf_count > 1) ? 1 : 0;
     int cur_line = E.current_line;
-    int vcol = cursor_vcol();
-    int text_rows = E.rows - (SHOW_STATUSBAR ? 2 : 0) - tab_rows;   // status + command bar
+    int vcol = cursor_vcol(cfg_ptr);
+    int text_rows = E.rows - (cfg_ptr->show_statusbar ? 2 : 0) - tab_rows;   // status + command bar
 
     if (cur_line < E.row_off)               E.row_off = cur_line;
     if (cur_line >= E.row_off + text_rows)  E.row_off = cur_line - text_rows + 1;
@@ -688,14 +608,16 @@ static void adjust_scroll(void) {
  * and @c GUTTER_WIDTH) followed by the line's characters with horizontal scrolling and tab 
  * expansion applied. Rows beyond the lastline display a @c ~ sentinel, matching traditional 
  * text-editor conventions.
+ * 
+ * @param cfg_ptr A pointer to the Config Instance.
  */
-static void draw_rows(void) {
+static void draw_rows(Config *cfg_ptr) {
     int total = total_lines();
     int tab_rows = (buf_count > 1) ? 1 : 0;
-    int text_rows = E.rows - (SHOW_STATUSBAR ? 2 : 0) - tab_rows;
+    int text_rows = E.rows - (cfg_ptr->show_statusbar ? 2 : 0) - tab_rows;
 
     char fmt[16];
-    snprintf(fmt, sizeof(fmt), "%%%dd ", GUTTER_WIDTH - 1);
+    snprintf(fmt, sizeof(fmt), "%%%dd ", cfg_ptr->gutter_width - 1);
 
     for (int y = 0; y < text_rows; y++) {
         int ln = y + E.row_off;
@@ -703,10 +625,10 @@ static void draw_rows(void) {
 
         // line number gutter
         attron(COLOR_PAIR(CP_LNUM));
-        if ((ln < total) && SHOW_LINE_NUMBERS) {
+        if ((ln < total) && cfg_ptr->show_line_numbers) {
             printw(fmt, ln + 1);
         } else {
-            for(int i=0; i < GUTTER_WIDTH - 1; i++) addch(' ');
+            for(int i=0; i < cfg_ptr->gutter_width - 1; i++) addch(' ');
             addch('~');
             addch(' ');
         }
@@ -720,7 +642,7 @@ static void draw_rows(void) {
             for (int i = s; i < end; i++) {
                 char c = gap_char(&E.text, i);
                 if (c == '\t') {
-                    int next = (col / TAB_WIDTH + 1) * TAB_WIDTH;
+                    int next = (col / cfg_ptr->tab_width + 1) * cfg_ptr->tab_width;
                     while (col < next && col - E.col_off < E.cols - 5) {
                         if (col >= E.col_off) addch(' ');
                         col++;
@@ -743,13 +665,15 @@ static void draw_rows(void) {
  * Draws a row of abbreviated buffer names above the status bar.  The active buffer's tab is 
  * highlighted with bold+reverse video. Modified buffers show a @c + suffix. The function is a 
  * no-op when only one buffer is open.
+ * 
+ * @param cfg_ptr A pointer to the Config Instance.
  */
-static void draw_tabbar(void) {
+static void draw_tabbar(Config *cfg_ptr) {
     // Tab bar sits at E.rows - 3 when statusbar is shown, else E.rows - 1.
     // We only draw it when there is more than one buffer open.
     if (buf_count <= 1) return;
 
-    int row = E.rows - (SHOW_STATUSBAR ? 3 : 1);
+    int row = E.rows - (cfg_ptr->show_statusbar ? 3 : 1);
     attron(COLOR_PAIR(CP_STATUS));
     move(row, 0);
     clrtoeol();
@@ -785,12 +709,14 @@ static void draw_tabbar(void) {
  * Displays the filename (or @c [No Name]), a dirty indicator, and on the
  * right side: line number, column, total lines, word count, and character
  * count.  Word count is lazily refreshed via count_words().
+ * 
+ * @param cfg_ptr A pointer to the Config Instance.
  */
-static void draw_statusbar(void) {
+static void draw_statusbar(Config *cfg_ptr) {
     attron(COLOR_PAIR(CP_STATUS) | A_BOLD);
     move(E.rows - 2, 0);
     int ln = E.current_line;
-    int col = cursor_vcol();
+    int col = cursor_vcol(cfg_ptr);
 
     int chars = count_chars();
     int words = count_words();
@@ -841,23 +767,25 @@ static void draw_cmdbar(void) {
  * Calls adjust_scroll(), then draws text rows, the optional tab bar, status bar, and command bar.
  * Finally positions the terminal cursor at the correct visual cell and flushes the update to 
  * the screen via @c doupdate().
+ * 
+ * @param cfg_ptr A pointer to the Config Instance.
  */
-static void refresh_screen(void) {
-    adjust_scroll();
+static void refresh_screen(Config *cfg_ptr) {
+    adjust_scroll(cfg_ptr);
     int ln = E.current_line;
-    int vcol = cursor_vcol();
+    int vcol = cursor_vcol(cfg_ptr);
 
-    draw_rows();
-    if (SHOW_STATUSBAR) {
-        draw_tabbar();
-        draw_statusbar();
+    draw_rows(cfg_ptr);
+    if (cfg_ptr->show_statusbar) {
+        draw_tabbar(cfg_ptr);
+        draw_statusbar(cfg_ptr);
         draw_cmdbar();
     } else {
-        draw_tabbar();
+        draw_tabbar(cfg_ptr);
     }
 
     // position real cursor (tab bar does not shift text rows — it sits below)
-    move(ln - E.row_off, GUTTER_WIDTH + vcol - E.col_off);
+    move(ln - E.row_off, cfg_ptr->gutter_width + vcol - E.col_off);
     wnoutrefresh(stdscr);
     doupdate();
 }
@@ -1128,10 +1056,12 @@ static void delete_line(void) {
  *
  * Flips @c SHOW_STATUSBAR between 0 and 1, then immediately redraws the
  * screen so the change is visible without waiting for the next keypress.
+ * 
+ * @param cfg_ptr A pointer to the Config Instance.
  */
-static void toggle_status(void) {
-    SHOW_STATUSBAR = !SHOW_STATUSBAR;
-    refresh_screen();
+static void toggle_status(Config *cfg_ptr) {
+    cfg_ptr->show_statusbar = !cfg_ptr->show_statusbar;
+    refresh_screen(cfg_ptr);
 }
 
 // --- Movement ---
@@ -1142,11 +1072,13 @@ static void toggle_status(void) {
  * Attempts to place the cursor at the same visual column on the previous line.
  * If that column exceeds the line's length the cursor is placed at the end of
  * the line. Moves to offset 0 when already on line 0.
+ * 
+ * @param cfg_ptr A pointer to the Config Instance.
  */
-static void move_up(void) {
+static void move_up(Config *cfg_ptr) {
     int ln = E.current_line;
     if (ln == 0) { E.cursor = 0; E.current_line = 0; return; }
-    int vcol = cursor_vcol();
+    int vcol = cursor_vcol(cfg_ptr);
     int s    = line_start(ln - 1);
     int l    = line_len(ln - 1);
     E.cursor = s + (vcol < l ? vcol : l);
@@ -1159,11 +1091,13 @@ static void move_up(void) {
  * Attempts to place the cursor at the same visual column on the next line.
  * If that column exceeds the line's length the cursor is placed at the end of
  * the line.  Does nothing when already on the last line.
+ * 
+ * @param cfg_ptr A pointer to the Config Instance.
  */
-static void move_down(void) {
+static void move_down(Config *cfg_ptr) {
     int ln = E.current_line;
     if (ln >= total_lines() - 1) return;
-    int vcol = cursor_vcol();
+    int vcol = cursor_vcol(cfg_ptr);
     int s    = line_start(ln + 1);
     int l    = line_len(ln + 1);
     E.cursor = s + (vcol < l ? vcol : l);
@@ -1219,10 +1153,12 @@ static void move_line_end(void) {
  *
  * Calls move_up() once per visible text row, effectively jumping the cursor
  * up by the current viewport height.
+ * 
+ * @param cfg_ptr A pointer to the Config Instance.
  */
-static void move_page_up(void) {
-    int text_rows = E.rows - (SHOW_STATUSBAR ? 2 : 0);
-    for (int i = 0; i < text_rows; i++) move_up();
+static void move_page_up(Config *cfg_ptr) {
+    int text_rows = E.rows - (cfg_ptr->show_statusbar ? 2 : 0);
+    for (int i = 0; i < text_rows; i++) move_up(cfg_ptr);
 }
 
 /**
@@ -1230,10 +1166,12 @@ static void move_page_up(void) {
  *
  * Calls move_down() once per visible text row, effectively jumping the cursor
  * down by the current viewport height.
+ * 
+ * @param cfg_ptr A pointer to the Config Instance.
  */
-static void move_page_down(void) {
-    int text_rows = E.rows - (SHOW_STATUSBAR ? 2 : 0);
-    for (int i = 0; i < text_rows; i++) move_down();
+static void move_page_down(Config *cfg_ptr) {
+    int text_rows = E.rows - (cfg_ptr->show_statusbar ? 2 : 0);
+    for (int i = 0; i < text_rows; i++) move_down(cfg_ptr);
 }
 
 /**
@@ -1297,27 +1235,29 @@ static int confirm_quit(void) {
  * - @c "dark"  — white on black palette.
  * - @c "light" — black on white palette.
  * - @c "default" — inherits the terminal's own colours.
+ * 
+ * @param cfg_ptr A pointer to the Config Instance.
  *
  * Finally sets the cursor shape via @c curs_set(CURSOR_STYLE).
  */
-static void init_ncurses(void) {
+static void init_ncurses(Config *cfg_ptr) {
     initscr();
     raw();
     noecho();
     keypad(stdscr, TRUE);
-    set_escdelay(KEY_DELAY);
+    set_escdelay(cfg_ptr->key_delay);
 
-    if (has_colors() && strcmp(COLOR_SCHEME, "mono") != 0) {
+    if (has_colors() && strcmp(cfg_ptr->color_scheme, "mono") != 0) {
         start_color();
         use_default_colors();
  
-        if (strcmp(COLOR_SCHEME, "dark") == 0) {
+        if (strcmp(cfg_ptr->color_scheme, "dark") == 0) {
             init_pair(CP_NORMAL, COLOR_WHITE,  COLOR_BLACK);
             init_pair(CP_STATUS, COLOR_BLACK,  COLOR_WHITE);
             init_pair(CP_CMDBAR, COLOR_BLACK,  COLOR_CYAN);
             init_pair(CP_LNUM,   COLOR_YELLOW, COLOR_BLACK);
             init_pair(CP_SEARCH, COLOR_BLACK,  COLOR_YELLOW);
-        } else if (strcmp(COLOR_SCHEME, "light") == 0) {
+        } else if (strcmp(cfg_ptr->color_scheme, "light") == 0) {
             init_pair(CP_NORMAL, COLOR_BLACK,  COLOR_WHITE);
             init_pair(CP_STATUS, COLOR_WHITE,  COLOR_BLUE);
             init_pair(CP_CMDBAR, COLOR_WHITE,  COLOR_BLUE);
@@ -1333,7 +1273,7 @@ static void init_ncurses(void) {
         }
     }
 
-    curs_set(CURSOR_STYLE);
+    curs_set(cfg_ptr->cursor_style);
 }
 
 /**
@@ -1460,12 +1400,14 @@ int handle_args(int argc, char *argv[]) {
  * @return 0 on normal exit.
  */
 int main(int argc, char *argv[]) {
-    load_config();
+    Config cfg;
+    config_defaults(&cfg);
+    load_config(&cfg);
 
     // If handle_args returns 1 it was a flag like --help; exit early.
     if (handle_args(argc, argv)) return 0;
 
-    init_ncurses();
+    init_ncurses(&cfg);
     getmaxyx(stdscr, E.rows, E.cols);
 
     while (1) {
@@ -1475,7 +1417,7 @@ int main(int argc, char *argv[]) {
             buffers[i].rows = E.rows;
             buffers[i].cols = E.cols;
         }
-        refresh_screen();
+        refresh_screen(&cfg);
         E.status[0] = '\0'; // clear status after one frame
 
         int c = getch();
@@ -1519,7 +1461,7 @@ int main(int argc, char *argv[]) {
         case ('d' & 0x1f): delete_line(); break;
 
         // Toggle Status
-        case ('w' & 0x1f): toggle_status(); break;
+        case ('w' & 0x1f): toggle_status(&cfg); break;
 
         case ('o' & 0x1f): { // Ctrl-O — new empty buffer
             char fname[256];
@@ -1573,16 +1515,16 @@ int main(int argc, char *argv[]) {
             break;
 
         // Movement
-        case KEY_UP:         move_up();        break;
-        case KEY_DOWN:       move_down();      break;
+        case KEY_UP:         move_up(&cfg);        break;
+        case KEY_DOWN:       move_down(&cfg);      break;
         case KEY_LEFT:       move_left();      break;
         case KEY_RIGHT:      move_right();     break;
         case KEY_HOME:
         case ('a' & 0x1f):   move_line_start(); break;
         case KEY_END:
         case ('e' & 0x1f):   move_line_end();   break;
-        case KEY_PPAGE:      move_page_up();     break;
-        case KEY_NPAGE:      move_page_down();   break;
+        case KEY_PPAGE:      move_page_up(&cfg);     break;
+        case KEY_NPAGE:      move_page_down(&cfg);   break;
 
         // Editing
         case KEY_BACKSPACE:
@@ -1610,7 +1552,7 @@ int main(int argc, char *argv[]) {
             break;
 
         case '\t':
-            for (int i = 0; i < TAB_WIDTH; i++) {
+            for (int i = 0; i < cfg.tab_width; i++) {
                 gap_insert(&E.text, E.cursor, ' ');
                 E.cursor++;
                 update_stats(' ', +1);
@@ -1625,7 +1567,7 @@ int main(int argc, char *argv[]) {
             update_stats('\n', +1);
             E.current_line++;
 
-            if (AUTO_INDENT) {
+            if (cfg.auto_indent) {
                 int ln = E.current_line - 1;
                 int s = line_start(ln);
                 int end = s + line_len(ln);
