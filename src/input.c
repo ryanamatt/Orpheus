@@ -21,10 +21,12 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ncurses.h>
+#include "logger.h"
 #include "input.h"
 #include "buffer.h"
 #include "display.h"
 #include "fileio.h"
+#include "logger.h"
 
 /**
  * @brief Handles the Main Input.
@@ -42,16 +44,20 @@ int main_input(Config *cfg_ptr, EditorContext *edcon) {
     switch (c) {
     // Quit
     case ('q' & 0x1f): // Ctrl-Q
+        log_debug("main_input: Ctrl-Q quit requested");
         if (confirm_quit(edcon)) return 0;
         break;
 
     // Save
     case ('s' & 0x1f): // Ctrl-S
+        log_debug("main_input: Ctrl-S save requested (filename='%s')",
+                  edcon->buffer->filename[0] ? edcon->buffer->filename : "");
         if (!edcon->buffer->filename[0]) {
             char buf[256];
             if (mini_input(edcon, "Save as: ", buf, sizeof buf)) {
                 strncpy(edcon->buffer->filename, buf, sizeof(edcon->buffer->filename));
                 edcon->buffer->search_term[sizeof(edcon->buffer->search_term) - 1] = '\0';
+                log_debug("main_input: save-as '%s'", edcon->buffer->filename);
                 save_file(edcon);
             }
         } else save_file(edcon);
@@ -59,16 +65,19 @@ int main_input(Config *cfg_ptr, EditorContext *edcon) {
 
     // Find
     case ('f' & 0x1f): // Ctrl-F
+        log_debug("main_input: Ctrl-F find invoked");
         do_find(edcon);
         break;
 
     // Replace
     case ('r' & 0x1f): // Ctrl-R
+        log_debug("main_input: Ctrl-R replace invoked");
         do_replace(edcon);
         break;
 
     // Go to Line
     case ('g' & 0x1f): // Ctrl-G
+        log_debug("main_input: Ctrl-G goto-line invoked");
         goto_line(edcon);
         break;
 
@@ -78,31 +87,48 @@ int main_input(Config *cfg_ptr, EditorContext *edcon) {
     case ('d' & 0x1f): delete_line(edcon); break;
 
     // Toggle Status
-    case ('w' & 0x1f): toggle_status(cfg_ptr, edcon); break;
+    case ('w' & 0x1f):
+        log_debug("main_input: Ctrl-W toggle statusbar");
+        toggle_status(cfg_ptr, edcon);
+        break;
 
     case ('o' & 0x1f): { // Ctrl-O — new empty buffer
+        log_debug("main_input: Ctrl-O open/new buffer invoked");
         char fname[256];
         if (mini_input(edcon, "Open file (blank for new): ", fname, sizeof fname) && fname[0]) {
             int idx = new_buffer(edcon);
             if (idx < 0) {
+                log_error("main_input: Ctrl-O — too many buffers (%d max)", MAX_BUFFERS);
                 set_status(edcon, "Too many buffers open (max %d)", MAX_BUFFERS);
-            } else {
+            } 
+            
+            else {
                 switch_buffer(edcon, idx);
                 strncpy(edcon->buffer->filename, fname, sizeof(edcon->buffer->filename));
                 edcon->buffer->filename[sizeof(edcon->buffer->filename) - 1] = '\0';
-                if (!load_file(edcon))
+
+                if (!load_file(edcon)) {
                     set_status(edcon, "New file: \"%s\"", edcon->buffer->filename);
-                else
+                    log_debug("main_input: Ctrl-O — new file '%s'", fname);
+                } 
+                
+                else {
                     set_status(edcon, "Opened \"%s\"", edcon->buffer->filename);
+                    log_debug("main_input: Ctrl-O — opened existing file '%s'", fname);
+                }
             }
         }
         else {
             // blank input - open empty unnamed buffer.
             int idx = new_buffer(edcon);
             if (idx < 0) {
+                log_error("main_input: Ctrl-O (blank) — too many buffers (%d max)", MAX_BUFFERS);
                 set_status(edcon, "Too many buffers open (max %d)", MAX_BUFFERS);
-            } else {
+            } 
+            
+            else {
                 switch_buffer(edcon, idx);
+                log_debug("main_input: Ctrl-O — new unnamed buffer[%d]", idx);
                 set_status(edcon, "New buffer %d/%d  [No Name]", edcon->cur_buf + 1, edcon->buf_count);
             }
         break;
@@ -112,10 +138,16 @@ int main_input(Config *cfg_ptr, EditorContext *edcon) {
     case ('n' & 0x1f): // Ctrl-N — next buffer
         if (edcon->buf_count > 1) {
             switch_buffer(edcon, edcon->cur_buf + 1);
+            log_debug("main_input: Ctrl-N — switched to buffer %d/%d '%s'",
+                      edcon->cur_buf + 1, edcon->buf_count,
+                      edcon->buffer->filename[0] ? edcon->buffer->filename : "[No Name]");
             set_status(edcon, "Buffer %d/%d: %s",
                         edcon->cur_buf + 1, edcon->buf_count,
                         edcon->buffer->filename[0] ? edcon->buffer->filename : "[No Name]");
-        } else {
+        } 
+        
+        else {
+            log_debug("main_input: Ctrl-N — only one buffer open");
             set_status(edcon, "Only one buffer open");
         }
         break;
@@ -123,10 +155,16 @@ int main_input(Config *cfg_ptr, EditorContext *edcon) {
     case ('p' & 0x1f): // Ctrl-P — previous buffer
         if (edcon->buf_count > 1) {
             switch_buffer(edcon, edcon->cur_buf - 1);
+            log_debug("main_input: Ctrl-P — switched to buffer %d/%d '%s'",
+                      edcon->cur_buf + 1, edcon->buf_count,
+                      edcon->buffer->filename[0] ? edcon->buffer->filename : "[No Name]");
             set_status(edcon, "Buffer %d/%d: %s",
                         edcon->cur_buf + 1, edcon->buf_count,
                         edcon->buffer->filename[0] ? edcon->buffer->filename : "[No Name]");
-        } else {
+        } 
+        
+        else {
+            log_debug("main_input: Ctrl-P — only one buffer open");
             set_status(edcon, "Only one buffer open");
         }
         break;
@@ -388,6 +426,7 @@ void do_find(EditorContext *edcon) {
         edcon->buffer->status[0] = '\0';
         return;
     }
+    log_debug("do_find: searching for '%s' from cursor=%d", term, edcon->buffer->cursor);
     strncpy(edcon->buffer->search_term, term, sizeof(edcon->buffer->search_term));
     edcon->buffer->search_term[sizeof(edcon->buffer->search_term) - 1] = '\0';
     edcon->buffer->last_search_pos = edcon->buffer->cursor;
@@ -405,11 +444,13 @@ void do_find(EditorContext *edcon) {
         }
         if (match) {
             edcon->buffer->cursor = pos;
+            log_debug("do_find: found '%s' at pos=%d line=%d", term, pos, pos_to_line(edcon, pos));
             set_status(edcon, "Found \"%s\"", term);
             edcon->buffer->current_line = pos_to_line(edcon, pos);
             return;
         }
     }
+    log_debug("do_find: '%s' not found", term);
     set_status(edcon, "Not found: \"%s\"", term);
 }
 
@@ -444,6 +485,8 @@ void do_replace(EditorContext *edcon) {
     int tlen = strlen(term);
     int rlen = strlen(rep);
     if (tlen == 0) { set_status(edcon, "Nothing to replace"); return; }
+
+    log_debug("do_replace: term='%s' rep='%s'", term, rep);
 
     move(edcon->buffer->rows - 1, 0);
     attron(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
@@ -485,8 +528,10 @@ void do_replace(EditorContext *edcon) {
         if (count) {
             rebuild_line_count(edcon);
             edcon->buffer->current_line = pos_to_line(edcon, edcon->buffer->cursor);
+            log_debug("do_replace: replaced all — %d occurrence(s) of '%s'", count, term);
             set_status(edcon, "Replaced %d occurrence%s", count, count == 1 ? "" : "s");
         } else {
+            log_debug("do_replace: replace-all — '%s' not found", term);
             set_status(edcon, "Not found: \"%s\"", term);
         }
     } else if (choice == 'n' || choice == 'N') {
@@ -506,6 +551,7 @@ void do_replace(EditorContext *edcon) {
             if (match) { found = pos; break; }
         }
         if (found < 0) {
+            log_debug("do_replace: replace-next — '%s' not found", term);
             set_status(edcon, "Not found: \"%s\"", term);
             return;
         }
@@ -520,6 +566,7 @@ void do_replace(EditorContext *edcon) {
         edcon->buffer->dirty  = 1;
         rebuild_line_count(edcon);
         edcon->buffer->current_line = pos_to_line(edcon, edcon->buffer->cursor);
+        log_debug("do_replace: replaced next '%s' -> '%s' at pos=%d", term, rep, found);
         set_status(edcon, "Replaced \"%s\" with \"%s\"", term, rep);
     } else {
         set_status(edcon, "Replace cancelled");
@@ -555,6 +602,8 @@ void cut_line(EditorContext *edcon) {
     edcon->buffer->dirty  = 1;
     rebuild_line_count(edcon);
     edcon->buffer->current_line = pos_to_line(edcon, edcon->buffer->cursor);
+    log_debug("cut_line: cut line %d (%d chars) from '%s'", ln + 1, clen,
+              edcon->buffer->filename[0] ? edcon->buffer->filename : "[No Name]");
     set_status(edcon, "Cut line");
 }
 
@@ -581,6 +630,7 @@ void paste_line(EditorContext *edcon) {
     rebuild_line_count(edcon);
 
     edcon->buffer->current_line = pos_to_line(edcon, edcon->buffer->cursor);
+    log_debug("paste_line: pasted %d chars at line %d", edcon->buffer->cb_len, ln + 1);
     set_status(edcon, "Pasted");
 }
 
@@ -609,6 +659,8 @@ void delete_line(EditorContext *edcon) {
     rebuild_line_count(edcon);
 
     edcon->buffer->current_line = pos_to_line(edcon, edcon->buffer->cursor);
+    log_debug("delete_line: deleted line %d (%d chars) from '%s'", ln + 1, len,
+              edcon->buffer->filename[0] ? edcon->buffer->filename : "[No Name]");
     set_status(edcon, "Deleted line");
 }
 
@@ -631,6 +683,7 @@ void goto_line(EditorContext *edcon) {
     int s = line_start(edcon, ln);
     edcon->buffer->cursor = s;
     edcon->buffer->current_line = ln;
+    log_debug("goto_line: jumped to line %d (pos=%d)", ln + 1, s);
     set_status(edcon, "Jumped to line %d", ln + 1);
 }
 
@@ -649,7 +702,10 @@ void goto_line(EditorContext *edcon) {
  * @return 1 if the editor should exit, 0 if the quit was cancelled.
  */
 int confirm_quit(EditorContext *edcon) {
-    if (!edcon->buffer->dirty) return 1;
+    if (!edcon->buffer->dirty) {
+        log_debug("confirm_quit: buffer clean — exiting");
+        return 1;
+    }
     move(edcon->buffer->rows - 1, 0);
     attron(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
     clrtoeol();
@@ -658,8 +714,18 @@ int confirm_quit(EditorContext *edcon) {
     refresh();
 
     int c = getch();
-    if (c == 'q' || c == 'Q') return 1;
-    if (c == 's' || c == 'S') { save_file(edcon); return 1; }
+    if (c == 'q' || c == 'Q') {
+        log_debug("confirm_quit: user chose quit without saving ('%s')",
+                  edcon->buffer->filename[0] ? edcon->buffer->filename : "[No Name]");
+        return 1;
+    }
+    if (c == 's' || c == 'S') {
+        log_debug("confirm_quit: user chose save-and-quit ('%s')",
+                  edcon->buffer->filename[0] ? edcon->buffer->filename : "[No Name]");
+        save_file(edcon);
+        return 1;
+    }
+    log_debug("confirm_quit: quit cancelled");
     edcon->buffer->status[0] = '\0';
     return 0;
 }

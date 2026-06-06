@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "logger.h"
 #include "config.h"
  
 // /* Global config instance — defined here, declared extern in config.h. */

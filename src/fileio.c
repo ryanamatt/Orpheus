@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
+#include "logger.h"
 #include "buffer.h"
 #include "fileio.h"
 
@@ -35,8 +36,12 @@
  * @return 1 on success, 0 if file could not be opened.
  */
 int load_file(EditorContext *edcon) {
+    log_debug("load_file: attempting to open '%s'", edcon->buffer->filename);
     FILE *f = fopen(edcon->buffer->filename, "r");
-    if (!f) return 0;
+    if (!f) {
+        log_error("load_file: cannot open '%s' — %s", edcon->buffer->filename, strerror(errno));
+        return 0;
+    }
 
     int c;
     while ((c = fgetc(f)) != EOF)
@@ -45,6 +50,8 @@ int load_file(EditorContext *edcon) {
     fclose(f);
     rebuild_line_count(edcon);   // initialise cached line_count + stats_dirty
     edcon->buffer->current_line = 0;
+    log_debug("load_file: loaded '%s' - %d chars, %d lines",
+              edcon->buffer->filename, gap_len(&edcon->buffer->text), edcon->buffer->line_count);
     return 1;
 }
 
@@ -60,17 +67,24 @@ int load_file(EditorContext *edcon) {
  */
 int save_file(EditorContext *edcon) {
     if (!edcon->buffer->filename[0]) {
+        log_error("save_file: no filename set");
         set_status(edcon, "No filename - use Ctrl-W to set one");
         return 0;
     }
+    log_debug("save_file: writing '%s'", edcon->buffer->filename);
     FILE *f = fopen(edcon->buffer->filename, "w");
-    if (!f) { set_status(edcon, "Cannot write: %s", strerror(errno)); return 0; }
+    if (!f) { 
+        log_error("save_file: cannot write '%s' — %s", edcon->buffer->filename, strerror(errno));
+        set_status(edcon, "Cannot write: %s", strerror(errno)); 
+        return 0; 
+    }
 
     int len = gap_len(&edcon->buffer->text);
     for (int i = 0; i < len; i++) fputc(gap_char(&edcon->buffer->text, i), f);
 
     fclose(f);
     edcon->buffer->dirty = 0;
+    log_debug("save_file: saved '%s' — %d bytes", edcon->buffer->filename, len);
     set_status(edcon, "Saved \"%s\"  (%d bytes)", edcon->buffer->filename, len);
     return 1;
 }

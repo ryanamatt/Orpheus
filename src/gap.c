@@ -19,6 +19,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include "logger.h"
 #include "gap.h"
 
 /**
@@ -89,6 +90,7 @@ void gap_grow(Gap *g, int need) {
     int add  = need - gap + CHUNK;
     int nsz  = g->size + add;
     char *nb = realloc(g->buf, nsz);
+    log_debug("gap_grow: realloc %d -> %d bytes", g->size, nsz);
 
     // shift tail to make gap continuous at same gap_start
     memmove(nb + g->gap_end + add, nb + g->gap_end, g->size - g->gap_end);
