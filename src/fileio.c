@@ -39,7 +39,7 @@ int load_file(EditorContext *edcon) {
     log_debug("load_file: attempting to open '%s'", edcon->buffer->filename);
     FILE *f = fopen(edcon->buffer->filename, "r");
     if (!f) {
-        log_error("load_file: cannot open '%s' — %s", edcon->buffer->filename, strerror(errno));
+        log_error("load_file: cannot open '%s' - %s", edcon->buffer->filename, strerror(errno));
         return 0;
     }
 
@@ -74,7 +74,7 @@ int save_file(EditorContext *edcon) {
     log_debug("save_file: writing '%s'", edcon->buffer->filename);
     FILE *f = fopen(edcon->buffer->filename, "w");
     if (!f) { 
-        log_error("save_file: cannot write '%s' — %s", edcon->buffer->filename, strerror(errno));
+        log_error("save_file: cannot write '%s' - %s", edcon->buffer->filename, strerror(errno));
         set_status(edcon, "Cannot write: %s", strerror(errno)); 
         return 0; 
     }
@@ -84,7 +84,7 @@ int save_file(EditorContext *edcon) {
 
     fclose(f);
     edcon->buffer->dirty = 0;
-    log_debug("save_file: saved '%s' — %d bytes", edcon->buffer->filename, len);
+    log_debug("save_file: saved '%s' - %d bytes", edcon->buffer->filename, len);
     set_status(edcon, "Saved \"%s\"  (%d bytes)", edcon->buffer->filename, len);
     return 1;
 }

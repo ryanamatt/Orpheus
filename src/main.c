@@ -117,7 +117,7 @@ int handle_args(EditorContext *edcon, int argc, char *argv[]) {
         new_buffer(edcon);
         switch_buffer(edcon, 0);
         set_status(edcon, "orpheus - no file. Ctrl-S to save, Ctrl-Q to quit.");
-        log_debug("No file argument — opened empty unnamed buffer");
+        log_debug("No file argument - opened empty unnamed buffer");
         return 0;
     }
 
@@ -157,7 +157,7 @@ int handle_args(EditorContext *edcon, int argc, char *argv[]) {
         return 1;
     }
 
-    // orp [file ...] — open each file as its own buffer
+    // orp [file ...] - open each file as its own buffer
     for (int i = 1; i < argc; i++) {
         int idx = new_buffer(edcon);
         if (idx < 0) {
@@ -185,11 +185,11 @@ int handle_args(EditorContext *edcon, int argc, char *argv[]) {
  * @brief Program entry point for the Orpheus text editor.
  *
  * Execution order:
- * 1. load_config() — read @c ~/.orpheusrc settings.
- * 2. handle_args() — process CLI flags/filenames; exit early for @c --help /
+ * 1. load_config() - read @c ~/.orpheusrc settings.
+ * 2. handle_args() - process CLI flags/filenames; exit early for @c --help /
  *    @c --version.
- * 3. init_ncurses() — set up the terminal.
- * 4. Main event loop — redraw the screen, read one keypress, dispatch to the
+ * 3. init_ncurses() - set up the terminal.
+ * 4. Main event loop - redraw the screen, read one keypress, dispatch to the
  *    appropriate handler, repeat until confirm_quit() returns true.
  * 5. @c endwin() and Gap buffer cleanup on exit.
  *
@@ -249,10 +249,10 @@ int main(int argc, char *argv[]) {
         running = main_input(&cfg, edcon);
     }
 
-    log_debug("Exiting main event loop — shutting down");
+    log_debug("Exiting main event loop - shutting down");
     endwin();
     for (int i = 0; i < edcon->buf_count; i++)
         gap_free(&edcon->buffers[i].text);
-    log_debug("Gap buffers freed — exit");
+    log_debug("Gap buffers freed - exit");
     return 0;
 }

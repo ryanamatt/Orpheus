@@ -44,7 +44,7 @@ Buffer *E_ptr = NULL;
  */
 int new_buffer(EditorContext *edcon) {
     if (edcon->buf_count >= MAX_BUFFERS) {
-        log_error("new_buffer: MAX_BUFFERS (%d) reached — cannot open new buffer", MAX_BUFFERS);
+        log_error("new_buffer: MAX_BUFFERS (%d) reached - cannot open new buffer", MAX_BUFFERS);
         return -1;
     }
     int idx = edcon->buf_count++;
@@ -152,7 +152,7 @@ void rebuild_line_count(EditorContext *edcon) {
 /**
  * @brief Return the total number of characters in the active buffer.
  *
- * Includes all characters — printable, whitespace, and newlines.
+ * Includes all characters - printable, whitespace, and newlines.
  *
  * @return Total character count.
  */
@@ -279,7 +279,7 @@ void update_current_line_delta(EditorContext *edcon, int old_cursor, int new_cur
             gap_char(&edcon->buffer->text, new_cursor) == '\n')
             edcon->buffer->current_line--;
     } else {
-        // arbitrary jump — full scan, but only once per key-press
+        // arbitrary jump - full scan, but only once per key-press
         edcon->buffer->current_line = pos_to_line(edcon, new_cursor);
     }
 }

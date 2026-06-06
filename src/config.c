@@ -23,7 +23,7 @@
 #include "logger.h"
 #include "config.h"
  
-// /* Global config instance — defined here, declared extern in config.h. */
+// /* Global config instance - defined here, declared extern in config.h. */
 // Config cfg;
 
 /**
