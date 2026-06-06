@@ -78,7 +78,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <time.h>
 #include <ncurses.h>
+#include "logger.h"
 #include "version.h"
 #include "config.h"
 #include "gap.h"
@@ -109,11 +111,13 @@
  *         0 if the editor should proceed to its main loop.
  */
 int handle_args(EditorContext *edcon, int argc, char *argv[]) {
+    log_debug("handle_args: argc=%d", argc);
     if (argc < 2) {
         // No file: one empty unnamed buffer
         new_buffer(edcon);
         switch_buffer(edcon, 0);
         set_status(edcon, "orpheus - no file. Ctrl-S to save, Ctrl-Q to quit.");
+        log_debug("No file argument — opened empty unnamed buffer");
         return 0;
     }
 
@@ -165,10 +169,13 @@ int handle_args(EditorContext *edcon, int argc, char *argv[]) {
         edcon->buffer = &edcon->buffers[idx];
         strncpy(edcon->buffer->filename, argv[i], sizeof(edcon->buffer->filename) - 1);
         edcon->buffer->filename[sizeof(edcon->buffer->filename) - 1] = '\0';
-        if (!load_file(edcon))
+        if (!load_file(edcon)) {
             set_status(edcon, "New file: \"%s\"", edcon->buffer->filename);
-        else
+            log_debug("handle_args: new file '%s' (does not exist on disk)", edcon->buffer->filename);
+        } else {
             set_status(edcon, "Opened \"%s\"", edcon->buffer->filename);
+            log_debug("handle_args: loaded '%s' successfully", edcon->buffer->filename);
+        }
     }
     switch_buffer(edcon, 0);
     return 0;
@@ -191,20 +198,43 @@ int handle_args(EditorContext *edcon, int argc, char *argv[]) {
  * @return 0 on normal exit.
  */
 int main(int argc, char *argv[]) {
+#ifdef DEBUG
+    time_t raw_time;
+    time(&raw_time);
+    struct tm *local_time = localtime(&raw_time);
+    char time_string[32];
+    strftime(time_string, sizeof(time_string), "%Y-%m-%d_%H-%M-%S", local_time);
+    char filename[64];
+    snprintf(filename, sizeof(filename), "orpheus_log_%s.log", time_string);
+    init_logger(filename);
+#else
+    init_logger("orpheus_log.log");
+#endif 
+
     EditorContext edcon_ctx = {0};
     EditorContext *edcon = &edcon_ctx;
+    log_debug("EditorContext initialized");
 
     Config cfg;
     config_defaults(&cfg);
+    log_debug("Config defaults applied");
     load_config(&cfg);
+    log_debug("Config loaded: tab_width=%d show_line_numbers=%d auto_indent=%d show_statusbar=%d "
+            "cursor_style=%d gutter_width=%d key_delay=%d color_scheme=%s",
+            cfg.tab_width, cfg.show_line_numbers, cfg.auto_indent,
+            cfg.show_statusbar, cfg.cursor_style, cfg.gutter_width,
+            cfg.key_delay, cfg.color_scheme);
 
-    // If handle_args returns 1 it was a flag like --help; exit early.
+    // If handle_args returns 1 it was a flag like --help, exit early.
     if (handle_args(edcon, argc, argv)) return 0;
 
+    log_debug("Starting ncurses");
     init_ncurses(&cfg);
     getmaxyx(stdscr, edcon->buffer->rows, edcon->buffer->cols);
+    log_debug("Terminal size: %d rows x %d cols", edcon->buffer->rows, edcon->buffer->cols);
 
     int running = 1;
+    log_debug("Entering main event loop");
 
     while (running) {
         getmaxyx(stdscr, edcon->buffer->rows, edcon->buffer->cols);
@@ -219,8 +249,10 @@ int main(int argc, char *argv[]) {
         running = main_input(&cfg, edcon);
     }
 
+    log_debug("Exiting main event loop — shutting down");
     endwin();
     for (int i = 0; i < edcon->buf_count; i++)
         gap_free(&edcon->buffers[i].text);
+    log_debug("Gap buffers freed — exit");
     return 0;
 }

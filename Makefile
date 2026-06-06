@@ -24,7 +24,7 @@ SRC = $(wildcard ${SRC_DIR}/*.c)
 OBJ = $(SRC:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 DEPS = $(OBJ:.o=.d)
 
-.PHONY: all clean install uninstall FORCE
+.PHONY: all clean install uninstall debug FORCE
 
 all: $(VERSION_HEADER) $(TARGET)
 
@@ -47,6 +47,9 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c $(VERSION_HEADER) | $(BUILD_DIR)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
+
+debug: CFLAGS += -DDEBUG -g
+debug: all
 
 install: all
 	@echo "Installing $(TARGET) to $(BINDIR)..."

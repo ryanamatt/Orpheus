@@ -5,3 +5,4 @@ build/
 orp
 version.h
 html/
+logs/
