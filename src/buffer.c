@@ -21,6 +21,7 @@
 #include <stdarg.h>
 #include <ctype.h>
 #include <stdio.h>
+#include "logger.h"
 #include "buffer.h"
 
 // Declare Multi-Buffer Globals
@@ -42,7 +43,10 @@ Buffer *E_ptr = NULL;
  *         been reached.
  */
 int new_buffer(EditorContext *edcon) {
-    if (edcon->buf_count >= MAX_BUFFERS) return -1;
+    if (edcon->buf_count >= MAX_BUFFERS) {
+        log_error("new_buffer: MAX_BUFFERS (%d) reached — cannot open new buffer", MAX_BUFFERS);
+        return -1;
+    }
     int idx = edcon->buf_count++;
 
     memset(&edcon->buffers[idx], 0, sizeof(Buffer));
@@ -53,6 +57,7 @@ int new_buffer(EditorContext *edcon) {
     edcon->buffers[idx].stats_dirty = 0;
     edcon->buffers[idx].current_line= 0;
 
+    log_debug("new_buffer: created buffer[%d], total buffers=%d", idx, edcon->buf_count);
     return idx;
 }
 
@@ -69,9 +74,14 @@ int new_buffer(EditorContext *edcon) {
  * @param i The desired buffer index.
  */
 void switch_buffer(EditorContext *edcon, int i) {
-    if (edcon->buf_count == 0) return;
+    if (edcon->buf_count == 0) {
+        log_error("switch_buffer: called with no open buffers");
+        return;
+    }
     if (i < 0) i = edcon->buf_count - 1;
     if (i >= edcon->buf_count) i = 0;
+    log_debug("switch_buffer: %d -> %d, (filename='%s')", edcon->cur_buf, i, 
+        edcon->buffers[i].filename[0] ? edcon->buffers[i].filename : "[No Name]");
     edcon->cur_buf = i;
     edcon->buffer = &edcon->buffers[edcon->cur_buf];
 }
@@ -133,8 +143,10 @@ void rebuild_line_count(EditorContext *edcon) {
     int n = 1, len = gap_len(&edcon->buffer->text);
     for (int i = 0; i < len; i++)
         if (gap_char(&edcon->buffer->text, i) == '\n') n++;
-    edcon->buffer->line_count  = n;
+    edcon->buffer->line_count = n;
     edcon->buffer->stats_dirty = 1; // force word rescan on next draw
+    log_debug("rebuild_line_count: '%s' -> %d lines, %d chars", 
+        edcon->buffer->filename[0] ? edcon->buffer->filename : "[No Name]", n, len);
 }
 
 /**

@@ -65,7 +65,11 @@ void load_config(Config *c) {
     snprintf(path, sizeof(path), "%s/.orpheusrc", getenv("HOME"));
 
     FILE *pfile = fopen(path, "r");
-    if (!pfile) return; // no config file use defaults
+    if (!pfile) {
+        log_debug("load_config: no config file at '%s' - using defaults.", path);   
+        return; // no config file use defaults
+    }
+    log_debug("load_config: reading '%s'", path);
 
     char line[128];
     while (fgets(line, sizeof(line), pfile)) {
