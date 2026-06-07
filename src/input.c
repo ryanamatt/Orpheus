@@ -195,7 +195,11 @@ int main_input(Config *cfg_ptr, EditorContext *edcon) {
             gap_delete(&edcon->buffer->text, edcon->buffer->cursor - 1);
             int old = edcon->buffer->cursor;
             edcon->buffer->cursor--;
-            update_current_line_delta(edcon, old, edcon->buffer->cursor);
+
+            if (deleted == '\n') {
+                update_current_line_delta(edcon, old, edcon->buffer->cursor);
+            }
+            
             update_stats(edcon, deleted, -1);
             edcon->buffer->dirty = 1;
         }
