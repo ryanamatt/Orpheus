@@ -43,6 +43,27 @@ int main_input(Config *cfg_ptr, EditorContext *edcon);
  */
 int mini_input(EditorContext *edcon, const char *prompt, char *out, int max);
 
+// --- Mouse Input ---
+
+/**
+ * @brief Convert a clicked screen column to a logical character offset within a line.
+ *
+ * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon   The EditorContext Instance.
+ * @param ln      Zero-based line number to search within.
+ * @param target_vcol  Visual column the user clicked (after subtracting gutter width and col_off).
+ * @return Logical character offset into the buffer.
+ */
+int vcol_to_pos(Config *cfg_ptr, EditorContext *edcon, int ln, int target_vcol);
+
+/**
+ * @brief Handle a mouse event from ncurses.
+ *
+ * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon   The EditorContext Instance.
+ */
+void handle_mouse(Config *cfg_ptr, EditorContext *edcon);
+
 // --- Navigation --- 
 
 /**

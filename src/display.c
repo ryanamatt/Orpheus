@@ -72,6 +72,10 @@ void init_ncurses(Config *cfg_ptr) {
     }
 
     curs_set(cfg_ptr->cursor_style);
+
+    // Enable mouse: click-to-position and scroll wheel
+    mousemask(BUTTON1_PRESSED | BUTTON4_PRESSED | BUTTON5_PRESSED, NULL);
+    mouseinterval(0);  // no click interval - report press immediately
 }
 
 /**

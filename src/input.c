@@ -42,6 +42,11 @@ int main_input(Config *cfg_ptr, EditorContext *edcon) {
     int c = getch();
 
     switch (c) {
+
+    case KEY_MOUSE:
+        handle_mouse(cfg_ptr, edcon);
+        break;
+
     // Quit
     case ('q' & 0x1f): // Ctrl-Q
         log_debug("main_input: Ctrl-Q quit requested");
@@ -409,6 +414,118 @@ void move_page_up(Config *cfg_ptr, EditorContext *edcon) {
 void move_page_down(Config *cfg_ptr, EditorContext *edcon) {
     int text_rows = edcon->buffer->rows - (cfg_ptr->show_statusbar ? 2 : 0);
     for (int i = 0; i < text_rows; i++) move_down(cfg_ptr, edcon);
+}
+
+// --- Mouse Input ---
+
+/**
+ * @brief Convert a clicked screen column to a logical character offset within a line.
+ *
+ * Walks the characters on @p ln from the line start, expanding tabs using @c cfg_ptr->tab_width,
+ * until the accumulated visual column meets or passes @p target_vcol. Accounts for the
+ * horizontal scroll offset (@c col_off).
+ *
+ * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon   The EditorContext Instance.
+ * @param ln      Zero-based line number to search within.
+ * @param target_vcol  Visual column the user clicked (after subtracting gutter width and col_off).
+ * @return Logical character offset into the buffer.
+ */
+int vcol_to_pos(Config *cfg_ptr, EditorContext *edcon, int ln, int target_vcol) {
+    int s = line_start(edcon, ln);
+    int end = s + line_len(edcon, ln);
+    int col = 0;
+    for (int i = s; i < end; i++) {
+        if (col >= target_vcol) return i;
+        char c = gap_char(&edcon->buffer->text, i);
+        if (c == '\t')
+            col = (col / cfg_ptr->tab_width + 1) * cfg_ptr->tab_width;
+        else
+            col++;
+    }
+    return end; // past end of line
+}
+
+/**
+ * @brief Handle a mouse event from ncurses.
+ *
+ * Reads the pending MEVENT and dispatches:
+ * - BUTTON1_PRESSED in the tab bar row: switch to the clicked buffer tab.
+ * - BUTTON1_PRESSED in the text area: move the cursor to the clicked position,
+ *   clamping to the nearest valid character.
+ * - BUTTON4_PRESSED (scroll up) / BUTTON5_PRESSED (scroll down): scroll the
+ *   viewport by three lines.
+ *
+ * The gutter width, tab-bar row, status-bar rows, and horizontal scroll offset
+ * are all accounted for when translating screen coordinates to buffer positions.
+ *
+ * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon   The EditorContext Instance.
+ */
+void handle_mouse(Config *cfg_ptr, EditorContext *edcon) {
+    MEVENT ev;
+    if (getmouse(&ev) != OK) return;
+
+    int tab_rows  = (edcon->buf_count > 1) ? 1 : 0;
+    int stat_rows = cfg_ptr->show_statusbar ? 2 : 0;
+    int text_rows = edcon->buffer->rows - stat_rows - tab_rows;
+    int tab_row   = edcon->buffer->rows - stat_rows - 1; // row where the tab bar sits
+
+    // Tab bar click -> switch buffer
+    if (tab_rows && ev.y == tab_row && (ev.bstate & BUTTON1_PRESSED)) {
+        int x = 0;
+        for (int i = 0; i < edcon->buf_count; i++) {
+            const char *name = edcon->buffers[i].filename[0]
+                               ? edcon->buffers[i].filename : "[No Name]";
+            const char *base = strrchr(name, '/');
+            base = base ? base + 1 : name;
+            char tab[64];
+            int tlen = snprintf(tab, sizeof tab, " %s%s ",
+                                base, edcon->buffers[i].dirty ? "+" : "");
+            if (ev.x >= x && ev.x < x + tlen) {
+                switch_buffer(edcon, i);
+                log_debug("handle_mouse: tab-click -> buffer %d '%s'", i,
+                          edcon->buffer->filename[0] ? edcon->buffer->filename : "[No Name]");
+                set_status(edcon, "Buffer %d/%d: %s", i + 1, edcon->buf_count,
+                           edcon->buffer->filename[0] ? edcon->buffer->filename : "[No Name]");
+                return;
+            }
+            x += tlen;
+        }
+        return; // click was in tab bar padding, ignore
+    }
+
+    // Scroll wheel -> 3 lines at a time
+    if (ev.bstate & BUTTON4_PRESSED) { // scroll up
+        for (int i = 0; i < 3; i++) move_up(cfg_ptr, edcon);
+        log_debug("handle_mouse: scroll up");
+        return;
+    }
+    if (ev.bstate & BUTTON5_PRESSED) { // scroll down
+        for (int i = 0; i < 3; i++) move_down(cfg_ptr, edcon);
+        log_debug("handle_mouse: scroll down");
+        return;
+    }
+ 
+    // Left click in text area -> position cursor
+    if ((ev.bstate & BUTTON1_PRESSED) && ev.y < text_rows) {
+        int clicked_line = ev.y + edcon->buffer->row_off;
+        int total = total_lines(edcon);
+        if (clicked_line >= total) clicked_line = total - 1;
+ 
+        // ev.x includes the gutter; subtract it to get the visual column,
+        // then add the horizontal scroll offset to get the true vcol.
+        int clicked_vcol = (ev.x - cfg_ptr->gutter_width) + edcon->buffer->col_off;
+        if (clicked_vcol < 0) clicked_vcol = 0;
+ 
+        int new_pos = vcol_to_pos(cfg_ptr, edcon, clicked_line, clicked_vcol);
+        int old_pos = edcon->buffer->cursor;
+        edcon->buffer->cursor = new_pos;
+        edcon->buffer->current_line = clicked_line;
+        log_debug("handle_mouse: click row=%d col=%d -> line=%d pos=%d (was %d)",
+                  ev.y, ev.x, clicked_line, new_pos, old_pos);
+        return;
+    }
 }
 
 // --- Command Operations ---
