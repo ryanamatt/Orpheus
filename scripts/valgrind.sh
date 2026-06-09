@@ -1,5 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
+# Orpheus - a small ncurses text editor
+#
 # Copyright (C) 2026 Ryan Mattson
 #
 # This program is free software: you can redistribute it and/or modify
