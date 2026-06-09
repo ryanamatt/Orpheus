@@ -12,12 +12,17 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            install: sudo apt-get install -y libncurses-dev
-          - os: arch-latest
-            install: sudo pacman -Sy --noconfirm ncurses
+            container: "" # Runs directly on the Ubuntu host
+            install: sudo apt-get update && sudo apt-get install -y libncurses-dev
+          
+          - os: ubuntu-latest
+            container: archlinux:latest # Runs inside an Arch Docker container
+            install: pacman -Syu --noconfirm ncurses make gcc 
       fail-fast: false
 
     runs-on: ${{ matrix.os }}
+    
+    container: ${{ matrix.container != '' && matrix.container || 'null' }}
 
     steps:
       - name: Checkout
