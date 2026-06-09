@@ -1,0 +1,14 @@
+* text=auto eol=lf
+
+*.c text eol=lf
+*.h text eol=lf
+Makefile text eol=lf
+
+*.md text
+.orpheusrc text
+.orpheusrc.example text
+
+*.o binary
+orp binary
+
+tests/** linguist-vendored
