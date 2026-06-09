@@ -1,35 +1,40 @@
-name: Test Suite
+name: Test Workflow
 
 on:
   push:
-    branches: [ "**" ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ "**" ]
+    branches: [ main, master ]
 
 jobs:
   test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            container: "" # Runs directly on the Ubuntu host
-            install: sudo apt-get update && sudo apt-get install -y libncurses-dev
-          
-          - os: ubuntu-latest
-            container: archlinux:latest # Runs inside an Arch Docker container
-            install: pacman -Syu --noconfirm ncurses make gcc 
       fail-fast: false
-
-    runs-on: ${{ matrix.os }}
-    
-    container: ${{ matrix.container != '' && matrix.container || 'null' }}
+      matrix:
+        os: [ubuntu, arch]
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: ${{ matrix.install }}
+      # --- Ubuntu Setup ---
+      - name: Install dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
 
-      - name: Run tests
+      # --- Arch Linux Setup ---
+      - name: Run tests in Arch Linux container
+        if: matrix.os == 'arch'
+        uses: docker://archlinux:latest
+        with:
+          args: >
+            sh -c "pacman -Syu --noconfirm base-devel && make test"
+
+      # --- Ubuntu Execution ---
+      - name: Run tests (Ubuntu)
+        if: matrix.os == 'ubuntu'
         run: make test
