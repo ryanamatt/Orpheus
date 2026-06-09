@@ -523,11 +523,10 @@ void handle_mouse(Config *cfg_ptr, EditorContext *edcon) {
         if (clicked_vcol < 0) clicked_vcol = 0;
  
         int new_pos = vcol_to_pos(cfg_ptr, edcon, clicked_line, clicked_vcol);
-        int old_pos = edcon->buffer->cursor;
         edcon->buffer->cursor = new_pos;
         edcon->buffer->current_line = clicked_line;
         log_debug("handle_mouse: click row=%d col=%d -> line=%d pos=%d (was %d)",
-                  ev.y, ev.x, clicked_line, new_pos, old_pos);
+                  ev.y, ev.x, clicked_line, new_pos, edcon->buffer->cursor);
         return;
     }
 }
