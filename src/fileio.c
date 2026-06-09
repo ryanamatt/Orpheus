@@ -49,6 +49,7 @@ int load_file(EditorContext *edcon) {
         
     fclose(f);
     rebuild_line_count(edcon);   // initialise cached line_count + stats_dirty
+    edcon->buffer->cursor = 0;
     edcon->buffer->current_line = 0;
     log_debug("load_file: loaded '%s' - %d chars, %d lines",
               edcon->buffer->filename, gap_len(&edcon->buffer->text), edcon->buffer->line_count);
