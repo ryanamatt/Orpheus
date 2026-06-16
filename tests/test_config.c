@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h> /* mkdir */
 #include <unistd.h>   /* rmdir, unsetenv */
 #include "../include/config.h"
 #include "test_framework.h"
@@ -35,8 +36,11 @@
 
 /* Write content to $dir/.orpheusrc. Returns 1 on success, 0 on failure. */
 static int write_rc(const char *dir, const char *content) {
+    char confdir[512];
     char path[512];
-    snprintf(path, sizeof(path), "%s/.orpheusrc", dir);
+    snprintf(confdir, sizeof(confdir), "%s/.config", dir);
+    mkdir(confdir, 0700);
+    snprintf(path, sizeof(path), "%s/.config/.orpheusrc", dir);
     FILE *f = fopen(path, "w");
     if (!f) return 0;
     fputs(content, f);
@@ -55,8 +59,11 @@ static int make_tmpdir(char *out) {
 /* Remove the .orpheusrc from a temp dir (best-effort). */
 static void cleanup_rc(const char *dir) {
     char path[512];
-    snprintf(path, sizeof(path), "%s/.orpheusrc", dir);
+    char confdir[512];
+    snprintf(path, sizeof(path), "%s/.config/.orpheusrc", dir);
     remove(path);
+    snprintf(confdir, sizeof(confdir), "%s/.config", dir);
+    rmdir(confdir);
     rmdir(dir);
 }
 

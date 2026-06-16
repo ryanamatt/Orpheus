@@ -63,7 +63,7 @@ void config_defaults(Config *cfg) {
  */
 void load_config(Config *c) {
     char path[512];
-    snprintf(path, sizeof(path), "%s/.orpheusrc", getenv("HOME"));
+    snprintf(path, sizeof(path), "%s/.config/.orpheusrc", getenv("HOME"));
 
     FILE *pfile = fopen(path, "r");
     if (!pfile) {
