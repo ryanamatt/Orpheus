@@ -228,10 +228,10 @@ int main(int argc, char *argv[]) {
     log_debug("Config defaults applied");
     load_config(&cfg);
     log_debug("Config loaded: tab_width=%d show_line_numbers=%d auto_indent=%d show_statusbar=%d "
-            "cursor_style=%d gutter_width=%d key_delay=%d color_scheme=%s",
+            "cursor_style=%d gutter_width=%d key_delay=%d color_scheme=%s, focus_mode=%d, focus_width=%d",
             cfg.tab_width, cfg.show_line_numbers, cfg.auto_indent,
             cfg.show_statusbar, cfg.cursor_style, cfg.gutter_width,
-            cfg.key_delay, cfg.color_scheme);
+            cfg.key_delay, cfg.color_scheme, cfg.focus_mode, cfg.focus_width);
 
     // If handle_args returns 1 it was a flag like --help, exit early.
     if (handle_args(edcon, argc, argv)) return 0;
