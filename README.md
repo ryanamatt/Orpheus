@@ -70,6 +70,7 @@ orp [file]
 | **Ctrl-S** | Save current file |
 | **Ctrl-Q** | Quit (prompts if unsaved changes exist) |
 | **Ctrl-F** | Find text (Enter to cycle, Esc to cancel) |
+| **Ctrl-R** | Replace a set of characters with others |
 | **Ctrl-G** | Go to specific line |
 | **Ctrl-K** | Cut line |
 | **Ctrl-U** | Paste (yank) line |
@@ -77,13 +78,14 @@ orp [file]
 | **Ctrl-A** | Go to start of line |
 | **Ctrl-E** | Go to end of line |
 | **Ctrl-W** | Toggle status bar visibility |
+| **Ctrl-T** | Toggle TypeWriter mode |
 | **Ctrl-O** | Open a new Buffer/tab |
 | **Ctrl-P** | Go to previous tab |
 | **Ctrl-N** | Go to next tab |
 
 ## Configuration
 
-You can customize Orpheus by creating a \~/.orpheusrc file. The format uses setting=value. Comments start with \#.
+You can customize Orpheus by creating a ~/.config/.orpheusrc file. The format uses setting=value. Comments start with \#.
 
 Example:
 
@@ -116,6 +118,10 @@ normal (default), 2 = very visible / block.
 * gutter_width (int):The number of spaces for the width of the line number gutter. Default 5.
 
 * key_delay (int): The time it takes to wait for escape-sequence processing. Default 50.
+
+* focus_mode (int): 0=normal, 1=focus/typewriter mode (Ctrl-T). Default: 0
+
+* focus_width (int) : Text column width in focus mode. Default: 72
 
 ## License
 
