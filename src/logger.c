@@ -19,7 +19,7 @@ int init_logger(const char* filename) {
     log_file = fopen(filepath, "a"); // Append mode
     if (log_file == NULL) {
         perror("Failed to open log file");
-        return -1;
+        return 1;
     }
     return 0;
 }
