@@ -196,7 +196,23 @@ int main_input(Config *cfg_ptr, EditorContext *edcon) {
     case KEY_BACKSPACE:
     case 127:
     case '\b':
-        if (edcon->buffer->cursor > 0) {
+        // Check if cursor is at the start of a line and not on line 1
+        if (edcon->buffer->current_line > 0 
+            && edcon->buffer->cursor == line_start(edcon, edcon->buffer->current_line)) {
+            // Move cursor to the end of the previous line (effectively deleting the newline character)
+            int prev_ln = edcon->buffer->current_line - 1;
+            int prev_line_end = line_start(edcon, prev_ln) + line_len(edcon, prev_ln);
+            
+            gap_delete(&edcon->buffer->text, prev_line_end);
+            
+            edcon->buffer->cursor = prev_line_end;
+            edcon->buffer->current_line = prev_ln;
+            edcon->buffer->dirty = 1;
+            rebuild_line_count(edcon);
+        }
+
+        // Standard backspace behavior
+        else if (edcon->buffer->cursor > 0) {
             char deleted = gap_char(&edcon->buffer->text, edcon->buffer->cursor - 1);
             gap_delete(&edcon->buffer->text, edcon->buffer->cursor - 1);
             int old = edcon->buffer->cursor;
