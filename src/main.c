@@ -214,9 +214,10 @@ int main(int argc, char *argv[]) {
     strftime(time_string, sizeof(time_string), "%Y-%m-%d_%H-%M-%S", local_time);
     char filename[64];
     snprintf(filename, sizeof(filename), "orpheus_log_%s.log", time_string);
-    init_logger(filename);
-#else
-    init_logger("orpheus_log.log");
+    if (init_logger(filename)) {
+        // Perror called by init_logger
+        return 1;
+    }
 #endif 
 
     EditorContext edcon_ctx = {0};
