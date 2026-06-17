@@ -113,6 +113,18 @@ TEST(defaults_key_delay) {
     ASSERT_EQ(c.key_delay, 50);
 }
 
+TEST(defaults_focus_mode) {
+    Config c;
+    config_defaults(&c);
+    ASSERT_EQ(c.focus_mode, 0);
+}
+
+TEST(defaults_focus_width) {
+    Config c;
+    config_defaults(&c);
+    ASSERT_EQ(c.focus_width, 72);
+}
+
 TEST(defaults_color_scheme) {
     Config c;
     config_defaults(&c);
@@ -282,6 +294,44 @@ TEST(load_config_key_delay) {
     ASSERT_EQ(c.key_delay, 100);
 }
 
+TEST(load_config_focus_mode) {
+    char tmpdir[64];
+    if (!make_tmpdir(tmpdir)) { ASSERT_TRUE(0); return; }
+    write_rc(tmpdir, "focus_mode=1\n");
+
+    char *old_home = getenv("HOME");
+    setenv("HOME", tmpdir, 1);
+
+    Config c;
+    config_defaults(&c);
+    load_config(&c);
+
+    if (old_home) setenv("HOME", old_home, 1);
+    else          unsetenv("HOME");
+    cleanup_rc(tmpdir);
+
+    ASSERT_EQ(c.focus_mode, 1);
+}
+
+TEST(load_config_focus_width) {
+    char tmpdir[64];
+    if (!make_tmpdir(tmpdir)) { ASSERT_TRUE(0); return; }
+    write_rc(tmpdir, "focus_width=80\n");
+
+    char *old_home = getenv("HOME");
+    setenv("HOME", tmpdir, 1);
+
+    Config c;
+    config_defaults(&c);
+    load_config(&c);
+
+    if (old_home) setenv("HOME", old_home, 1);
+    else          unsetenv("HOME");
+    cleanup_rc(tmpdir);
+
+    ASSERT_EQ(c.focus_width, 80);
+}
+
 /* -----------------------------------------------------------------------
  * load_config — color_scheme string key
  * ----------------------------------------------------------------------- */
@@ -447,6 +497,8 @@ int main(void) {
     RUN(defaults_cursor_style);
     RUN(defaults_gutter_width);
     RUN(defaults_key_delay);
+    RUN(defaults_focus_mode);
+    RUN(defaults_focus_width);
     RUN(defaults_color_scheme);
 
     SUITE("load_config — no rc file");
@@ -460,6 +512,8 @@ int main(void) {
     RUN(load_config_cursor_style);
     RUN(load_config_gutter_width);
     RUN(load_config_key_delay);
+    RUN(load_config_focus_mode);
+    RUN(load_config_focus_width);
 
     SUITE("load_config — color_scheme string");
     RUN(load_config_color_scheme_dark);
