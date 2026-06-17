@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include "logger.h"
 #include "config.h"
  
@@ -42,6 +43,13 @@ void config_defaults(Config *cfg) {
     cfg->focus_width       = 72;
     strncpy(cfg->color_scheme, "default", sizeof(cfg->color_scheme) - 1);
     cfg->color_scheme[sizeof(cfg->color_scheme) - 1] = '\0';
+}
+
+char* trim(char* str) {
+    char* end = str + strlen(str) - 1;
+    while(end > str && isspace((unsigned char)*end)) end--;
+    end[1] = '\0';
+    return str;
 }
 
 /**
@@ -71,6 +79,8 @@ void load_config(Config *c) {
         char *val = strtok(NULL, "=");
 
         if (key && val) {
+            key = trim(key);
+
             if (strcmp(key, "tab_width") == 0) {
                 c->tab_width = atoi(val);
             }
@@ -93,7 +103,7 @@ void load_config(Config *c) {
 
             else if (strcmp(key, "color_scheme") == 0) {
                 val[strcspn(val, "\r\n")] = 0;
-                strncpy(c->color_scheme, val, sizeof(c->color_scheme - 1));
+                strncpy(c->color_scheme, val, sizeof(c->color_scheme) - 1);
                 c->color_scheme[sizeof(c->color_scheme) - 1] = '\0';
             }
 
