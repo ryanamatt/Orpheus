@@ -97,6 +97,12 @@ int main_input(Config *cfg_ptr, EditorContext *edcon) {
         toggle_status(cfg_ptr, edcon);
         break;
 
+    // Toggle Focus / Typewriter mode
+    case ('t' & 0x1f):
+        log_debug("main_input: Ctrl-T toggle focus mode");
+        toggle_focus(cfg_ptr, edcon);
+        break;
+
     case ('o' & 0x1f): { // Ctrl-O - new empty buffer
         log_debug("main_input: Ctrl-O open/new buffer invoked");
         char fname[256];

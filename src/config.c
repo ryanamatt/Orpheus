@@ -38,6 +38,8 @@ void config_defaults(Config *cfg) {
     cfg->cursor_style      = 1;
     cfg->gutter_width      = 5;
     cfg->key_delay         = 50;
+    cfg->focus_mode        = 0;
+    cfg->focus_width       = 72;
     strncpy(cfg->color_scheme, "default", sizeof(cfg->color_scheme) - 1);
     cfg->color_scheme[sizeof(cfg->color_scheme) - 1] = '\0';
 }
@@ -47,17 +49,6 @@ void config_defaults(Config *cfg) {
  * 
  * Reads key=value from the user's home directory config file, skipping blank lines and lines with
  * @c #. Recognized keys and the global variables they populate.
- * 
- * | Key               | Variable        |
- * |-------------------|-----------------|
- * | tab_width         | TAB_WIDTH       |
- * | show_line_numbers | SHOW_LINE_NUMBERS |
- * | auto_indent       | AUTO_INDENT     |
- * | show_statusbar    | SHOW_STATUSBAR  |
- * | cursor_style      | CURSOR_STYLE    |
- * | color_scheme      | COLOR_SCHEME    |
- * | gutter_width      | GUTTER_WIDTH    |
- * | key_delay         | KEY_DELAY       |
  * 
  * If the file does not exist the function returns silently and all settings retain their defaults.
  */
@@ -112,6 +103,14 @@ void load_config(Config *c) {
 
             else if (strcmp(key, "key_delay") == 0) {
                 c->key_delay = atoi(val);
+            }
+
+            else if (strcmp(key, "focus_mode") == 0) {
+                c->focus_mode = atoi(val);
+            }
+
+            else if (strcmp(key, "focus_width") == 0) {
+                c->focus_width = atoi(val);
             }
         }
     }

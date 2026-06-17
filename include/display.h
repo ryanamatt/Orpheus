@@ -94,4 +94,17 @@ void refresh_screen(Config *cfg_ptr, EditorContext *edcon);
  */
 void toggle_status(Config *cfg_ptr, EditorContext *edcon);
 
+/**
+ * @brief Toggle focus (typewriter) mode on and off (Ctrl-T).
+ *
+ * Focus mode centers a @c cfg_ptr->focus_width column of text horizontally on
+ * the terminal, hides the line-number gutter, and suppresses the status and
+ * command bars — leaving only the prose on screen. Toggling back restores the
+ * previous @c show_statusbar value.
+ *
+ * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon   The EditorContext Instance.
+ */
+void toggle_focus(Config *cfg_ptr, EditorContext *edcon);
+
 #endif // DISPLAY_H

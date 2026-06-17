@@ -118,7 +118,8 @@ static inline int  getmouse(MEVENT *e)                 { (void)e; return ERR; }
 #include "config.h"   /* Config */
 #include "buffer.h"   /* EditorContext */
 
-static inline void toggle_status(Config *c, EditorContext *e) { (void)c; (void)e; }
+static inline void toggle_status(Config *c, EditorContext *e)  { (void)c; (void)e; }
+static inline void toggle_focus(Config *c, EditorContext *e)   { (void)c; (void)e; }
 static inline void refresh_screen(Config *c, EditorContext *e) { (void)c; (void)e; }
 
 #endif /* NCURSES_STUB_H */

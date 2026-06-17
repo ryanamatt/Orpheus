@@ -93,7 +93,12 @@ void adjust_scroll(Config *cfg_ptr, EditorContext *edcon) {
     int tab_rows = (edcon->buf_count > 1) ? 1 : 0;
     int cur_line = edcon->buffer->current_line;
     int vcol = cursor_vcol(cfg_ptr, edcon);
-    int text_rows = edcon->buffer->rows - (cfg_ptr->show_statusbar ? 2 : 0) - tab_rows;   // status + command bar
+    int text_rows = edcon->buffer->rows - (cfg_ptr->show_statusbar ? 2 : 0) - tab_rows;
+
+    // In focus mode the usable column width is focus_width, otherwise full width minus gutter.
+    int usable_cols = cfg_ptr->focus_mode
+        ? cfg_ptr->focus_width
+        : edcon->buffer->cols - cfg_ptr->gutter_width;
 
     if (cur_line < edcon->buffer->row_off)
         edcon->buffer->row_off = cur_line;
@@ -101,8 +106,8 @@ void adjust_scroll(Config *cfg_ptr, EditorContext *edcon) {
         edcon->buffer->row_off = cur_line - text_rows + 1;
     if (vcol < edcon->buffer->col_off)
         edcon->buffer->col_off = vcol;
-    if (vcol >= edcon->buffer->col_off + edcon->buffer->cols - 6)
-        edcon->buffer->col_off = vcol - (edcon->buffer->cols - 6) + 1;
+    if (vcol >= edcon->buffer->col_off + usable_cols - 1)
+        edcon->buffer->col_off = vcol - usable_cols + 2;
 }
 
 /**
@@ -121,47 +126,93 @@ void draw_rows(Config *cfg_ptr, EditorContext *edcon) {
     int tab_rows = (edcon->buf_count > 1) ? 1 : 0;
     int text_rows = edcon->buffer->rows - (cfg_ptr->show_statusbar ? 2 : 0) - tab_rows;
 
+    // Focus mode: center a focus_width column; suppress gutter.
+    // Normal mode: render gutter as before.
+    int focus = cfg_ptr->focus_mode;
+    int left_margin = 0;
+    int gutter = focus ? 0 : cfg_ptr->gutter_width;
+    int usable_cols = focus
+        ? cfg_ptr->focus_width
+        : edcon->buffer->cols - gutter;
+
+    if (focus) {
+        // Center the text column: margin = (terminal_width - focus_width) / 2
+        left_margin = (edcon->buffer->cols - cfg_ptr->focus_width) / 2;
+        if (left_margin < 0) left_margin = 0;
+    }
+
     char fmt[16];
     snprintf(fmt, sizeof(fmt), "%%%dd ", cfg_ptr->gutter_width - 1);
 
     for (int y = 0; y < text_rows; y++) {
         int ln = y + edcon->buffer->row_off;
         move(y, 0);
+        clrtoeol();
 
-        // line number gutter
-        attron(COLOR_PAIR(CP_LNUM));
-        if ((ln < total) && cfg_ptr->show_line_numbers) {
-            printw(fmt, ln + 1);
-        } else {
-            for(int i=0; i < cfg_ptr->gutter_width - 1; i++) addch(' ');
-            addch('~');
-            addch(' ');
-        }
-        attroff(COLOR_PAIR(CP_LNUM));
-
-        attron(COLOR_PAIR(CP_NORMAL));
-        if (ln < total) {
-            int s = line_start(edcon, ln);
-            int end = s + line_len(edcon, ln);
-            int col = 0;
-            for (int i = s; i < end; i++) {
-                char c = gap_char(&edcon->buffer->text, i);
-                if (c == '\t') {
-                    int next = (col / cfg_ptr->tab_width + 1) * cfg_ptr->tab_width;
-                    while (col < next && col - edcon->buffer->col_off < edcon->buffer->cols - 5) {
-                        if (col >= edcon->buffer->col_off) addch(' ');
+        if (focus) {
+            // In focus mode: no gutter, just a blank left margin then text.
+            attron(COLOR_PAIR(CP_NORMAL));
+            if (ln < total) {
+                int s = line_start(edcon, ln);
+                int end = s + line_len(edcon, ln);
+                int col = 0;
+                for (int i = s; i < end; i++) {
+                    char c = gap_char(&edcon->buffer->text, i);
+                    if (c == '\t') {
+                        int next = (col / cfg_ptr->tab_width + 1) * cfg_ptr->tab_width;
+                        while (col < next && col - edcon->buffer->col_off < usable_cols) {
+                            if (col >= edcon->buffer->col_off)
+                                mvaddch(y, left_margin + col - edcon->buffer->col_off, ' ');
+                            col++;
+                        }
+                    } else {
+                        if (col >= edcon->buffer->col_off
+                                && col - edcon->buffer->col_off < usable_cols)
+                            mvaddch(y, left_margin + col - edcon->buffer->col_off,
+                                    (unsigned char)c);
                         col++;
                     }
-                } else {
-                    if (col >= edcon->buffer->col_off 
-                            && col - edcon->buffer->col_off < edcon->buffer->cols - 5)
-                        addch((unsigned char)c);
-                    col++;
                 }
             }
+            attroff(COLOR_PAIR(CP_NORMAL));
+        } 
+        
+        else {
+            // Normal mode: line number gutter + text.
+            attron(COLOR_PAIR(CP_LNUM));
+            if ((ln < total) && cfg_ptr->show_line_numbers) {
+                printw(fmt, ln + 1);
+            } else {
+                for (int i = 0; i < cfg_ptr->gutter_width - 1; i++) addch(' ');
+                addch('~');
+                addch(' ');
+            }
+            attroff(COLOR_PAIR(CP_LNUM));
+
+            attron(COLOR_PAIR(CP_NORMAL));
+            if (ln < total) {
+                int s = line_start(edcon, ln);
+                int end = s + line_len(edcon, ln);
+                int col = 0;
+                for (int i = s; i < end; i++) {
+                    char c = gap_char(&edcon->buffer->text, i);
+                    if (c == '\t') {
+                        int next = (col / cfg_ptr->tab_width + 1) * cfg_ptr->tab_width;
+                        while (col < next && col - edcon->buffer->col_off < edcon->buffer->cols - 5) {
+                            if (col >= edcon->buffer->col_off) addch(' ');
+                            col++;
+                        }
+                    } else {
+                        if (col >= edcon->buffer->col_off
+                                && col - edcon->buffer->col_off < edcon->buffer->cols - 5)
+                            addch((unsigned char)c);
+                        col++;
+                    }
+                }
+            }
+            clrtoeol();
+            attroff(COLOR_PAIR(CP_NORMAL));
         }
-        clrtoeol();
-        attroff(COLOR_PAIR(CP_NORMAL));
     }
 }
 
@@ -296,8 +347,12 @@ void refresh_screen(Config *cfg_ptr, EditorContext *edcon) {
         draw_tabbar(cfg_ptr, edcon);
     }
 
-    // position real cursor (tab bar does not shift text rows — it sits below)
-    move(ln - edcon->buffer->row_off, cfg_ptr->gutter_width + vcol - edcon->buffer->col_off);
+    // Position real cursor: in focus mode use the centred left margin; otherwise gutter.
+    int left_margin = cfg_ptr->focus_mode
+        ? (edcon->buffer->cols - cfg_ptr->focus_width) / 2
+        : cfg_ptr->gutter_width;
+    if (left_margin < 0) left_margin = 0;
+    move(ln - edcon->buffer->row_off, left_margin + vcol - edcon->buffer->col_off);
     wnoutrefresh(stdscr);
     doupdate();
 }
@@ -313,5 +368,34 @@ void refresh_screen(Config *cfg_ptr, EditorContext *edcon) {
  */
 void toggle_status(Config *cfg_ptr, EditorContext *edcon) {
     cfg_ptr->show_statusbar = !cfg_ptr->show_statusbar;
+    refresh_screen(cfg_ptr, edcon);
+}
+
+/**
+ * @brief Toggle focus (typewriter) mode on and off (Ctrl-T).
+ *
+ * Focus mode centers a @c cfg_ptr->focus_width column of text horizontally on
+ * the terminal, hides the line-number gutter, and suppresses the status and
+ * command bars — leaving only the prose on screen. Toggling back restores the
+ * previous @c show_statusbar value.
+ *
+ * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon   The EditorContext Instance.
+ */
+void toggle_focus(Config *cfg_ptr, EditorContext *edcon) {
+    cfg_ptr->focus_mode = !cfg_ptr->focus_mode;
+    if (cfg_ptr->focus_mode) {
+        cfg_ptr->show_statusbar    = 0;
+        cfg_ptr->show_line_numbers = 0;
+        edcon->buffer->col_off = 0;
+        set_status(edcon, "Focus mode  (Ctrl-T to exit)");
+    } 
+    
+    else {
+        cfg_ptr->show_statusbar    = 1;
+        cfg_ptr->show_line_numbers = 1;
+        set_status(edcon, "Focus mode off");
+    }
+    clear();
     refresh_screen(cfg_ptr, edcon);
 }

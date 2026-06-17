@@ -34,6 +34,7 @@
  * Ctrl-A   go to start of line
  * Ctrl-E   go to end of line
  * Ctrl-W   Toggle Hiding/Showing the Status Bar
+ * Ctrl-T   Toggle Focus (typewriter) mode — centers text, hides chrome
  * Ctrl-O   Open a new empty buffer
  * Ctrl-N   Switch to next buffer/tab
  * Ctrl-P   Switch to previous buffer/tab
@@ -73,6 +74,12 @@
  * 
  * key_delay: int
  *  The time it takes to wait for escape-sequence processing. Default 50.
+ *
+ * focus_mode: int
+ *   If non-zero, start in focus mode on launch. Default: 0.
+ *
+ * focus_width: int
+ *   Width of the centred text column used in focus mode. Default: 72.
  */
 
 #include <stdlib.h>
@@ -142,6 +149,7 @@ int handle_args(EditorContext *edcon, int argc, char *argv[]) {
         printf(" Ctrl-A             Go to start of line\n");
         printf(" Ctrl-E             Go to end of line\n");
         printf(" Ctrl-W             Toggle hiding/showing the status bar\n");
+        printf(" Ctrl-T             Toggle focus (typewriter) mode\n");
         printf(" Ctrl-O             Open a new empty buffer\n");
         printf(" Ctrl-N             Switch to next buffer/tab\n");
         printf(" Ctrl-P             Switch to previous buffer/tab\n");

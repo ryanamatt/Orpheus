@@ -35,6 +35,8 @@ typedef struct {
     char color_scheme[32];  /**< "default" | "dark" | "light" | "mono" */
     int  gutter_width;      /**< Width of the line-number gutter. Default: 5 */
     int  key_delay;         /**< Escape-sequence processing delay ms. Default: 50 */
+    int  focus_mode;        /**< 0=normal, 1=focus/typewriter mode (Ctrl-T). Default: 0 */
+    int  focus_width;       /**< Text column width in focus mode. Default: 72 */
 } Config;
 
 /**
