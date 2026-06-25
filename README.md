@@ -57,7 +57,7 @@ make clean
 ## Usage
 
 ```Bash
-orp [file]
+orp [file file2 ...]
 ```
 
 ### **Keybindings**
@@ -126,4 +126,4 @@ normal (default), 2 = very visible / block.
 ## License
 
 This project is licensed under the GNU General Public License v3.0 (GPL-3.0). See the
-[LICENSE](http://docs.google.com/LICENSE) file for details.
+[LICENSE](LICENSE) file for details.
