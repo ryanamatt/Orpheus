@@ -267,6 +267,11 @@ void draw_tabbar(Config *cfg_ptr, EditorContext *edcon) {
  * Displays the filename (or @c [No Name]), a dirty indicator, and on the
  * right side: line number, column, total lines, word count, and character
  * count.  Word count is lazily refreshed via count_words().
+ *
+ * If @c edcon->buffer->status is non-empty, the one-shot status message is
+ * overlaid in the gap between the filename and the statistics, so neither
+ * is ever obscured. If the message is too wide to fit in the available gap
+ * it is truncated rather than spilling into the stats.
  * 
  * @param cfg_ptr A pointer to the Config Instance.
  * @param edcon The EditorContext Instance.
@@ -291,17 +296,40 @@ void draw_statusbar(Config *cfg_ptr, EditorContext *edcon) {
 
     int pad = edcon->buffer->cols - (int)strlen(left) - (int)strlen(right);
     printw("%s", left);
-    for (int i = 0; i < pad && i < edcon->buffer->cols; i++) addch(' ');
+
+    if (edcon->buffer->status[0] && pad > 2) {
+        // Overlay the one-shot message centered in the gap between filename
+        // and stats, truncating with "..." if it doesn't fit.
+        char msg[128];
+        int avail = pad - 2; // leave a 1-space margin on each side
+        snprintf(msg, sizeof msg, "%.*s", avail, edcon->buffer->status);
+        if ((int)strlen(edcon->buffer->status) > avail && avail > 3) {
+            msg[avail - 3] = '\0';
+            strcat(msg, "...");
+        }
+        int mlen = (int)strlen(msg);
+        int gap_left = (pad - mlen) / 2;
+        int gap_right = pad - mlen - gap_left;
+
+        for (int i = 0; i < gap_left; i++) addch(' ');
+        attron(A_REVERSE);
+        printw("%s", msg);
+        attroff(A_REVERSE);
+        for (int i = 0; i < gap_right; i++) addch(' ');
+    } else {
+        for (int i = 0; i < pad && i < edcon->buffer->cols; i++) addch(' ');
+    }
+
     printw("%s", right);
     attroff(COLOR_PAIR(CP_STATUS) | A_BOLD);
 }
 
 /**
- * @brief Render the command bar with keybinding hints and the status message.
+ * @brief Render the command bar with keybinding hints.
  *
- * Draws the fixed keybinding cheatsheet on the bottom row. If @c edcon->buffer->status is 
- * non-empty it is  overlaid right-aligned on the same row in bold, providing one-shot feedback 
- * to the user.
+ * Draws the fixed keybinding cheatsheet on the bottom row. The one-shot
+ * status message is rendered separately by draw_statusbar(), so the
+ * keybinding hints here are never overwritten.
  * 
  * @param edcon The EditorContext Instance.
  */
@@ -311,16 +339,6 @@ void draw_cmdbar(EditorContext *edcon) {
     printw(" ^S Save  ^Q Quit  ^F Find  ^R Repl  ^G Go-To  ^K Cut  ^U Paste  ^D Del-Ln  ^W Hide  ^N Next  ^P Prev");
     clrtoeol();
     attroff(COLOR_PAIR(CP_CMDBAR));
-
-    // show one-shot status message on right side
-    if (edcon->buffer->status[0]) {
-        int slen = strlen(edcon->buffer->status);
-        int x = edcon->buffer->cols - slen - 2;
-        if (x < 0) x = 0;
-        attron(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
-        mvprintw(edcon->buffer->rows - 1, x, " %s ", edcon->buffer->status);
-        attroff(COLOR_PAIR(CP_CMDBAR) | A_BOLD);
-    }
 }
 
 /**
