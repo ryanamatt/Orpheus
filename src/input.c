@@ -27,6 +27,7 @@
 #include "display.h"
 #include "fileio.h"
 #include "logger.h"
+#include "clipboard.h"
 
 /**
  * @brief Handles the Main Input.
@@ -736,6 +737,10 @@ void cut_line(EditorContext *edcon) {
     edcon->buffer->clipboard[clen] = '\0';
     edcon->buffer->cb_len = clen;
 
+    // mirror to the system clipboard so the cut line is pasteable in other apps;
+    // the internal clipboard above still works as a fallback if this fails.
+    int synced = clipboard_set(edcon->buffer->clipboard, clen);
+
     // delete line content + newline
     int del = len + (end < gap_len(&edcon->buffer->text) ? 1 : 0);
     for (int i = 0; i < del; i++) gap_delete(&edcon->buffer->text, s);
@@ -744,22 +749,41 @@ void cut_line(EditorContext *edcon) {
     edcon->buffer->dirty  = 1;
     rebuild_line_count(edcon);
     edcon->buffer->current_line = pos_to_line(edcon, edcon->buffer->cursor);
-    log_debug("cut_line: cut line %d (%d chars) from '%s'", ln + 1, clen,
-              edcon->buffer->filename[0] ? edcon->buffer->filename : "[No Name]");
-    set_status(edcon, "Cut line");
+    log_debug("cut_line: cut line %d (%d chars) from '%s' (system clipboard %s)", ln + 1, clen,
+              edcon->buffer->filename[0] ? edcon->buffer->filename : "[No Name]",
+              synced ? "synced" : "unavailable");
+    set_status(edcon, synced ? "Cut line (copied to system clipboard)" : "Cut line");
 }
 
 /**
  * @brief Paste the clipboard contents as a new line above the current line (Ctrl-U).
  *
- * Inserts the text stored in @c edcon->buffer->clipboard at the start of the current line,
- * followed by a newline character. Does nothing and sets a status message if
- * the clipboard is empty. Rebuilds cached statistics after the insertion.
+ * Prefers the system clipboard: if a backend is available and has content,
+ * that text is used (and also cached into @c edcon->buffer->clipboard so it
+ * survives even if the backend disappears mid-session). Otherwise falls back
+ * to the internal @c edcon->buffer->clipboard set by a previous cut_line().
+ * Inserts the chosen text at the start of the current line, followed by a
+ * newline character. Does nothing and sets a status message if both sources
+ * are empty. Rebuilds cached statistics after the insertion.
  * 
  * @param edcon The EditorContext Instance.
  */
 void paste_line(EditorContext *edcon) {
+    int from_system = 0;
+
+    if (clipboard_available()) {
+        char sysbuf[sizeof(edcon->buffer->clipboard)];
+        int n = clipboard_get(sysbuf, sizeof(sysbuf));
+        if (n > 0) {
+            memcpy(edcon->buffer->clipboard, sysbuf, (size_t)n);
+            edcon->buffer->clipboard[n] = '\0';
+            edcon->buffer->cb_len = n;
+            from_system = 1;
+        }
+    }
+
     if (!edcon->buffer->cb_len) { set_status(edcon, "Clipboard empty"); return; }
+
     int ln = edcon->buffer->current_line;
     int s  = line_start(edcon, ln);
     // insert clipboard + newline
@@ -772,8 +796,9 @@ void paste_line(EditorContext *edcon) {
     rebuild_line_count(edcon);
 
     edcon->buffer->current_line = pos_to_line(edcon, edcon->buffer->cursor);
-    log_debug("paste_line: pasted %d chars at line %d", edcon->buffer->cb_len, ln + 1);
-    set_status(edcon, "Pasted");
+    log_debug("paste_line: pasted %d chars at line %d (source: %s)", edcon->buffer->cb_len, ln + 1,
+              from_system ? "system clipboard" : "internal clipboard");
+    set_status(edcon, from_system ? "Pasted (from system clipboard)" : "Pasted");
 }
 
 /**
