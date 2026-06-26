@@ -7,7 +7,7 @@ for simplicity and efficiency in the terminal environment.
 
 * **Lightweight:** Minimal overhead for fast startup and operation.  
 * **Ncurses UI:** Native terminal integration.  
-* **Configurable:** Supports custom settings via a .orpheusrc file.  
+* **Configurable:** Supports custom settings via a orpheus.config file.  
 * **Smart Editing:** Features include auto-indentation and gap-buffer based text manipulation.
 
 ## Prerequisites
@@ -85,16 +85,17 @@ orp [file file2 ...]
 
 ## Configuration
 
-You can customize Orpheus by creating a ~/.config/.orpheusrc file. The format uses setting=value. Comments start with \#.
+You can customize Orpheus by creating a ~/.config/Orpheus/orpheus.config file. The format uses
+setting=value. Comments start with \#.
 
 Example:
 
-```.orpheusrc
+```config
 # Set tab width to 4 spaces  
 tab_width=4
 ```
 
-See .orpeheusrc.example for an example file.
+See orpheus.config.example for an example file.
 
 Full Conguration Settings:
 
@@ -122,6 +123,18 @@ normal (default), 2 = very visible / block.
 * focus_mode (int): 0=normal, 1=focus/typewriter mode (Ctrl-T). Default: 0
 
 * focus_width (int) : Text column width in focus mode. Default: 72
+
+* time_format (string): strftime() format string used to expand {{currentTime}} in templates.
+Default: "%-m/%-d/%y" (e.g. "6/25/26"). Note: %-m/%-d are glibc extensions (no leading zero);
+on non-glibc systems use %m/%d instead.
+
+## Documentation
+
+View Docs by running
+
+```Bash
+./scripts/docs.sh
+```
 
 ## License
 
