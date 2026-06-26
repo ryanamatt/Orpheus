@@ -23,6 +23,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <limits.h>
 #include "../include/config.h"
 #include "test_framework.h"
 
@@ -37,14 +38,18 @@
 
 /* Write content to $dir/.config/Orpheus/orpheus.config. Returns 1 on success, 0 on failure. */
 static int write_rc(const char *dir, const char *content) {
-    char topdir[512];
-    char confdir[512];
-    char path[512];
-    snprintf(topdir, sizeof(topdir), "%s/.config", dir);
+    char topdir[PATH_MAX];
+    char confdir[PATH_MAX];
+    char path[PATH_MAX];
+
+    if (snprintf(topdir, sizeof(topdir), "%s/.config", dir) >= sizeof(topdir)) return 0;
     mkdir(topdir, 0700);
-    snprintf(confdir, sizeof(confdir), "%s/Orpheus", topdir);
+
+    if (snprintf(confdir, sizeof(confdir), "%s/Orpheus", topdir) >= sizeof(confdir)) return 0;
     mkdir(confdir, 0700);
-    snprintf(path, sizeof(path), "%s/orpheus.config", confdir);
+
+    if (snprintf(path, sizeof(path), "%s/orpheus.config", confdir) >= sizeof(path)) return 0;
+
     FILE *f = fopen(path, "w");
     if (!f) return 0;
     fputs(content, f);
