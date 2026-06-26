@@ -23,9 +23,6 @@
 #include <ctype.h>
 #include "logger.h"
 #include "config.h"
- 
-// /* Global config instance - defined here, declared extern in config.h. */
-// Config cfg;
 
 /**
  * @brief Fill @p cfg with compiled in default values.
@@ -43,6 +40,8 @@ void config_defaults(Config *cfg) {
     cfg->focus_width       = 72;
     strncpy(cfg->color_scheme, "default", sizeof(cfg->color_scheme) - 1);
     cfg->color_scheme[sizeof(cfg->color_scheme) - 1] = '\0';
+    strncpy(cfg->time_format, "%-m/%-d/%y", sizeof(cfg->time_format) - 1);
+    cfg->time_format[sizeof(cfg->time_format) - 1] = '\0';
 }
 
 char* trim(char* str) {
@@ -53,16 +52,47 @@ char* trim(char* str) {
 }
 
 /**
- * @brief Load user settings from @c ~/.orpheusrc.
+ * @brief Build "$HOME/.config/Orpheus" into @p out.
+ *
+ * Shared by load_config() and the template loader so both agree on a single
+ * source of truth for Orpheus's config directory. Does not create any
+ * directories - it only builds the path string.
+ *
+ * @param out     Destination buffer.
+ * @param outsize Capacity of @p out.
+ * @return 1 on success, 0 if $HOME is unset or the result would not fit.
+ */
+int config_dir_path(char *out, int outsize) {
+    const char *home = getenv("HOME");
+    if (!home) {
+        log_error("config_dir_path: $HOME is not set");
+        return 0;
+    }
+    int n = snprintf(out, outsize, "%s/.config/%s", home, CONFIG_DIR_NAME);
+    if (n < 0 || n >= outsize) {
+        log_error("config_dir_path: path too long for buffer (%d bytes needed)", n);
+        return 0;
+    }
+    return 1;
+}
+
+/**
+ * @brief Load user settings from @c ~/.config/Orpheus/orpheus.config.
  * 
- * Reads key=value from the user's home directory config file, skipping blank lines and lines with
+ * Reads key=value from the user's config directory, skipping blank lines and lines with
  * @c #. Recognized keys and the global variables they populate.
  * 
  * If the file does not exist the function returns silently and all settings retain their defaults.
  */
 void load_config(Config *c) {
+    char dir[480];
     char path[512];
-    snprintf(path, sizeof(path), "%s/.config/.orpheusrc", getenv("HOME"));
+
+    if (!config_dir_path(dir, sizeof(dir))) {
+        log_debug("load_config: could not resolve config directory - using defaults.");
+        return;
+    }
+    snprintf(path, sizeof(path), "%s/%s", dir, CONFIG_FILE_NAME);
 
     FILE *pfile = fopen(path, "r");
     if (!pfile) {
@@ -121,6 +151,12 @@ void load_config(Config *c) {
 
             else if (strcmp(key, "focus_width") == 0) {
                 c->focus_width = atoi(val);
+            }
+
+            else if (strcmp(key, "time_format") == 0) {
+                val[strcspn(val, "\r\n")] = 0;
+                strncpy(c->time_format, val, sizeof(c->time_format) - 1);
+                c->time_format[sizeof(c->time_format) - 1] = '\0';
             }
         }
     }

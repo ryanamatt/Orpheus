@@ -18,7 +18,7 @@
  */
 
 /*
- * Usage: orp [file ...]
+ * Usage: orp [-t template] [file ...]
  *
  * Keybindings
  * -----------
@@ -38,8 +38,26 @@
  * Ctrl-O   Open a new empty buffer
  * Ctrl-N   Switch to next buffer/tab
  * Ctrl-P   Switch to previous buffer/tab
- * 
- * Optional Settings placed in ~/.orpheusrc
+ *
+ * Templates
+ * -----------
+ * -t NAME / --template NAME
+ *   For every filename argument that does NOT already exist on disk, populate
+ *   the new buffer with ~/.config/Orpheus/templates/NAME.tmpl instead of
+ *   leaving it empty. Files that already exist are opened as-is; the
+ *   template is never applied to them. If no filename is given at all,
+ *   the template is applied to the new unnamed buffer instead. Templates
+ *   are plain text and may use {{currentTime}}, expanded via strftime()
+ *   with the time_format setting below. Example template:
+ *
+ *     ----- 
+ *     Chapter 1
+ *     Draft 1
+ *     First Time: {{currentTime}}
+ *     Last Update: {{currentTime}}
+ *     -----
+ *
+ * Optional Settings placed in ~/.config/Orpheus/orpheus.config
  * -----------
  * Works as follows with # as comments:
  * setting=value
@@ -80,6 +98,11 @@
  *
  * focus_width: int
  *   Width of the centred text column used in focus mode. Default: 72.
+ *
+ * time_format: string
+ *   strftime() format string used to expand {{currentTime}} in templates.
+ *   Default: "%-m/%-d/%y" (e.g. "6/25/26"). Note: %-m/%-d are glibc
+ *   extensions (no leading zero); on non-glibc systems use %m/%d instead.
  */
 
 #include <stdlib.h>
@@ -95,29 +118,43 @@
 #include "fileio.h"
 #include "display.h"
 #include "input.h"
+#include "template.h"
 
 // --- Main Loop ---
 
 /**
  * @brief Parse command-line arguments and set up initial buffers.
  *
- * Handles three cases:
+ * Handles four cases:
  * - No arguments: opens a single empty unnamed buffer and returns 0.
  * - @c -h / @c --help: prints usage information to stdout and returns 1.
  * - @c -v / @c --version: prints version and build date to stdout and returns 1.
- * - One or more filenames: opens each as its own buffer, loading content from
- *   disk where possible, and returns 0.
+ * - One or more filenames, optionally preceded by @c -t / @c --template
+ *   <name>: opens each filename as its own buffer, loading content from
+ *   disk where possible. For any filename that does NOT already exist on
+ *   disk, if a template name was given, apply_template() populates the new
+ *   buffer with the named template instead of leaving it empty. Existing
+ *   files are always opened as-is; the template is never applied to them.
+ *   If @c -t / @c --template <name> is given with NO filenames at all, the
+ *   template is applied to the new unnamed buffer instead.
  *
- * A return value of 1 signals that the editor should not start (the caller
- * should exit after this function returns).
+ * A non-zero return signals that the editor should not start (the caller
+ * should exit after this function returns). Two non-zero values are used so
+ * @c main() can choose the right process exit code:
+ *   - 1: a clean informational exit (@c -h / @c --help, @c -v / @c --version).
+ *        @c main() exits 0 for these, per the usual CLI convention.
+ *   - 2: a usage error (e.g. @c -t / @c --template given without a name).
+ *        @c main() exits 1 for these, so scripts can detect the failure.
  *
+ * @param cfg_ptr Pointer to the Config Instance (supplies time_format to
+ *                apply_template()).
  * @param edcon The EditorContext Instance.
  * @param argc Argument count from @c main().
  * @param argv Argument vector from @c main().
- * @return 1 if a terminal flag was handled and the editor should not start.
- *         0 if the editor should proceed to its main loop.
+ * @return 0 if the editor should proceed to its main loop, 1 for a clean
+ *         informational exit, or 2 for a usage error. See above.
  */
-int handle_args(EditorContext *edcon, int argc, char *argv[]) {
+int handle_args(Config *cfg_ptr, EditorContext *edcon, int argc, char *argv[]) {
     log_debug("handle_args: argc=%d", argc);
     if (argc < 2) {
         // No file: one empty unnamed buffer
@@ -131,10 +168,14 @@ int handle_args(EditorContext *edcon, int argc, char *argv[]) {
     // orp [-h | --help]
     if (argc == 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
         printf("Orpheus %s\n", ORPHEUS_VERSION);
-        printf("Usage: orp [file ...]\n\n");
+        printf("Usage: orp [-t template] [file ...]\n\n");
         printf("Options:\n");
-        printf("  -h, --help        Show this help message\n");
-        printf("  -v, --version     Show version information\n\n");
+        printf("  -h, --help            Show this help message\n");
+        printf("  -v, --version         Show version information\n");
+        printf("  -t, --template NAME   Populate any NEW file with ~/.config/Orpheus/\n");
+        printf("                        templates/NAME.tmpl. Files that already exist\n");
+        printf("                        on disk are opened as-is and never templated.\n");
+        printf("                        With no filename, applies to the new buffer.\n\n");
         printf("Keybindings:\n");
         printf("Arrow keys          Navigation - move 1 char in direction of arrow\n");
         printf("PgUp/PgDn Home/End  Navigation - top/bottom, front/end of line\n");
@@ -165,8 +206,55 @@ int handle_args(EditorContext *edcon, int argc, char *argv[]) {
         return 1;
     }
 
-    // orp [file ...] - open each file as its own buffer
+    // orp [-t|--template NAME] [file ...]
+    // Scan for -t/--template up front so it applies regardless of where it
+    // appears relative to the filename arguments, then strip it from the
+    // list before the file-opening loop below sees argv.
+    const char *template_name = NULL;
+    char *files[argc];   // upper bound on the number of filename args
+    int   file_count = 0;
+
     for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--template") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "orpheus: %s requires a template name\n", argv[i]);
+                return 2;
+            }
+            template_name = argv[++i];
+        } else {
+            files[file_count++] = argv[i];
+        }
+    }
+
+    if (file_count == 0) {
+        // -t was given with no filenames - apply it to the new unnamed
+        // buffer too, same as we would for a new (not-yet-existing) file.
+        new_buffer(edcon);
+        switch_buffer(edcon, 0);
+        if (template_name) {
+            if (apply_template(cfg_ptr, edcon, template_name)) {
+                log_debug("handle_args: no filename - unnamed buffer populated from template '%s'",
+                          template_name);
+            } 
+            
+            else {
+                // apply_template() already set a status message explaining
+                // the failure (e.g. "Template not found"); leave the buffer
+                // empty rather than silently discarding that message.
+                log_debug("handle_args: no filename - template '%s' failed, buffer left empty",
+                          template_name);
+            }
+        } 
+        
+        else {
+            set_status(edcon, "orpheus - no file. Ctrl-S to save, Ctrl-Q to quit.");
+            log_debug("handle_args: no filename, no template - opened empty unnamed buffer");
+        }
+        return 0;
+    }
+
+    // orp [file ...] - open each file as its own buffer
+    for (int i = 0; i < file_count; i++) {
         int idx = new_buffer(edcon);
         if (idx < 0) {
             fprintf(stderr, "orpheus: too many files (max %d)\n", MAX_BUFFERS);
@@ -175,12 +263,32 @@ int handle_args(EditorContext *edcon, int argc, char *argv[]) {
         // Temporarily point E at this buffer so load_file / set_status work
         edcon->cur_buf = idx;
         edcon->buffer = &edcon->buffers[idx];
-        strncpy(edcon->buffer->filename, argv[i], sizeof(edcon->buffer->filename) - 1);
+        strncpy(edcon->buffer->filename, files[i], sizeof(edcon->buffer->filename) - 1);
         edcon->buffer->filename[sizeof(edcon->buffer->filename) - 1] = '\0';
         if (!load_file(edcon)) {
-            set_status(edcon, "New file: \"%s\"", edcon->buffer->filename);
-            log_debug("handle_args: new file '%s' (does not exist on disk)", edcon->buffer->filename);
-        } else {
+            // File does not exist on disk yet.
+            if (template_name) {
+                if (apply_template(cfg_ptr, edcon, template_name)) {
+                    log_debug("handle_args: new file '%s' populated from template '%s'",
+                              edcon->buffer->filename, template_name);
+                } 
+                
+                else {
+                    // apply_template() already set a status message explaining
+                    // the failure (e.g. "Template not found"); leave the buffer
+                    // empty rather than silently discarding that message.
+                    log_debug("handle_args: new file '%s' - template '%s' failed, buffer left empty",
+                              edcon->buffer->filename, template_name);
+                }
+            } 
+            
+            else {
+                set_status(edcon, "New file: \"%s\"", edcon->buffer->filename);
+                log_debug("handle_args: new file '%s' (does not exist on disk)", edcon->buffer->filename);
+            }
+        } 
+        
+        else {
             set_status(edcon, "Opened \"%s\"", edcon->buffer->filename);
             log_debug("handle_args: loaded '%s' successfully", edcon->buffer->filename);
         }
@@ -193,9 +301,9 @@ int handle_args(EditorContext *edcon, int argc, char *argv[]) {
  * @brief Program entry point for the Orpheus text editor.
  *
  * Execution order:
- * 1. load_config() - read @c ~/.orpheusrc settings.
+ * 1. load_config() - read @c ~/.config/Orpheus/orpheus.config settings.
  * 2. handle_args() - process CLI flags/filenames; exit early for @c --help /
- *    @c --version.
+ *    @c --version. Applies @c -t / @c --template to any new files.
  * 3. init_ncurses() - set up the terminal.
  * 4. Main event loop - redraw the screen, read one keypress, dispatch to the
  *    appropriate handler, repeat until confirm_quit() returns true.
@@ -229,13 +337,17 @@ int main(int argc, char *argv[]) {
     log_debug("Config defaults applied");
     load_config(&cfg);
     log_debug("Config loaded: tab_width=%d show_line_numbers=%d auto_indent=%d show_statusbar=%d "
-            "cursor_style=%d gutter_width=%d key_delay=%d color_scheme=%s, focus_mode=%d, focus_width=%d",
+            "cursor_style=%d gutter_width=%d key_delay=%d color_scheme=%s, focus_mode=%d, focus_width=%d, "
+            "time_format=%s",
             cfg.tab_width, cfg.show_line_numbers, cfg.auto_indent,
             cfg.show_statusbar, cfg.cursor_style, cfg.gutter_width,
-            cfg.key_delay, cfg.color_scheme, cfg.focus_mode, cfg.focus_width);
+            cfg.key_delay, cfg.color_scheme, cfg.focus_mode, cfg.focus_width, cfg.time_format);
 
-    // If handle_args returns 1 it was a flag like --help, exit early.
-    if (handle_args(edcon, argc, argv)) return 0;
+    // handle_args() returns 0 to proceed, 1 for a clean info exit (-h/-v),
+    // or 2 for a usage error - see its doc comment for the exit-code mapping.
+    int hargs = handle_args(&cfg, edcon, argc, argv);
+    if (hargs == 1) return 0;
+    if (hargs == 2) return 1;
 
     log_debug("Starting ncurses");
     init_ncurses(&cfg);
