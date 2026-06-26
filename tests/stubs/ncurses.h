@@ -122,4 +122,20 @@ static inline void toggle_status(Config *c, EditorContext *e)  { (void)c; (void)
 static inline void toggle_focus(Config *c, EditorContext *e)   { (void)c; (void)e; }
 static inline void refresh_screen(Config *c, EditorContext *e) { (void)c; (void)e; }
 
+static inline int clipboard_available(void) {
+    return 0;
+}
+ 
+static inline int clipboard_set(const char *text, int len) {
+    (void)text;
+    (void)len;
+    return 0;
+}
+ 
+static inline int clipboard_get(char *out, int outsize) {
+    (void)out;
+    (void)outsize;
+    return -1;
+}
+
 #endif /* NCURSES_STUB_H */

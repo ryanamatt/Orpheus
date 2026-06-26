@@ -33,7 +33,7 @@ TEST_SHARED_SRCS = $(SRC_DIR)/gap.c $(SRC_DIR)/buffer.c \
 TEST_SHARED_OBJS = $(TEST_SHARED_SRCS:$(SRC_DIR)/%.c=$(TEST_BUILD)/%.o)
 TEST_INPUT_OBJ   = $(TEST_BUILD)/input_stub.o
 
-TEST_CFLAGS = -std=c17 -Wall -Iinclude -I$(TEST_STUBS)
+TEST_CFLAGS = -std=c17 -Wall -I$(TEST_STUBS) -Iinclude
 
 TEST_BINS = $(TEST_BUILD)/test_gap    \
             $(TEST_BUILD)/test_buffer \
