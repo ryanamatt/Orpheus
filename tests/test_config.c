@@ -21,26 +21,30 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h> /* mkdir */
-#include <unistd.h>   /* rmdir, unsetenv */
+#include <sys/stat.h>
+#include <unistd.h>
 #include "../include/config.h"
 #include "test_framework.h"
 
 /* -----------------------------------------------------------------------
  * Helpers
  *
- * load_config() reads from $HOME/.orpheusrc, so we redirect HOME to a
- * temp directory and write a known rc file there for each test that needs
- * it. Tests that want no rc file point HOME at /tmp (no file present).
+ * load_config() reads from $HOME/.config/Orpheus/orpheus.config, so we
+ * redirect HOME to a temp directory and write a known config file there for
+ * each test that needs it. Tests that want no config file point HOME at a
+ * fresh tmpdir with nothing written into it.
  * ----------------------------------------------------------------------- */
 
-/* Write content to $dir/.orpheusrc. Returns 1 on success, 0 on failure. */
+/* Write content to $dir/.config/Orpheus/orpheus.config. Returns 1 on success, 0 on failure. */
 static int write_rc(const char *dir, const char *content) {
+    char topdir[512];
     char confdir[512];
     char path[512];
-    snprintf(confdir, sizeof(confdir), "%s/.config", dir);
+    snprintf(topdir, sizeof(topdir), "%s/.config", dir);
+    mkdir(topdir, 0700);
+    snprintf(confdir, sizeof(confdir), "%s/Orpheus", topdir);
     mkdir(confdir, 0700);
-    snprintf(path, sizeof(path), "%s/.config/.orpheusrc", dir);
+    snprintf(path, sizeof(path), "%s/orpheus.config", confdir);
     FILE *f = fopen(path, "w");
     if (!f) return 0;
     fputs(content, f);
@@ -56,12 +60,16 @@ static int make_tmpdir(char *out) {
     return 1;
 }
 
-/* Remove the .orpheusrc from a temp dir (best-effort). */
+/* Remove the orpheus.config (and its Orpheus/.config dirs) from a temp dir
+ * (best-effort). */
 static void cleanup_rc(const char *dir) {
     char path[512];
+    char orpdir[512];
     char confdir[512];
-    snprintf(path, sizeof(path), "%s/.config/.orpheusrc", dir);
+    snprintf(path, sizeof(path), "%s/.config/Orpheus/orpheus.config", dir);
     remove(path);
+    snprintf(orpdir, sizeof(orpdir), "%s/.config/Orpheus", dir);
+    rmdir(orpdir);
     snprintf(confdir, sizeof(confdir), "%s/.config", dir);
     rmdir(confdir);
     rmdir(dir);
@@ -129,6 +137,12 @@ TEST(defaults_color_scheme) {
     Config c;
     config_defaults(&c);
     ASSERT_STR_EQ(c.color_scheme, "default");
+}
+
+TEST(defaults_time_format) {
+    Config c;
+    config_defaults(&c);
+    ASSERT_STR_EQ(c.time_format, "%-m/%-d/%y");
 }
 
 /* -----------------------------------------------------------------------
@@ -394,6 +408,29 @@ TEST(load_config_color_scheme_mono) {
 }
 
 /* -----------------------------------------------------------------------
+ * load_config — time_format string key
+ * ----------------------------------------------------------------------- */
+
+TEST(load_config_time_format) {
+    char tmpdir[64];
+    if (!make_tmpdir(tmpdir)) { ASSERT_TRUE(0); return; }
+    write_rc(tmpdir, "time_format=%Y-%m-%d\n");
+
+    char *old_home = getenv("HOME");
+    setenv("HOME", tmpdir, 1);
+
+    Config c;
+    config_defaults(&c);
+    load_config(&c);
+
+    if (old_home) setenv("HOME", old_home, 1);
+    else          unsetenv("HOME");
+    cleanup_rc(tmpdir);
+
+    ASSERT_STR_EQ(c.time_format, "%Y-%m-%d");
+}
+
+/* -----------------------------------------------------------------------
  * load_config — robustness (comments, blank lines, unknown keys)
  * ----------------------------------------------------------------------- */
 
@@ -500,6 +537,7 @@ int main(void) {
     RUN(defaults_focus_mode);
     RUN(defaults_focus_width);
     RUN(defaults_color_scheme);
+    RUN(defaults_time_format);
 
     SUITE("load_config — no rc file");
     RUN(load_config_no_file_leaves_defaults);
@@ -519,6 +557,9 @@ int main(void) {
     RUN(load_config_color_scheme_dark);
     RUN(load_config_color_scheme_light);
     RUN(load_config_color_scheme_mono);
+
+    SUITE("load_config — time_format string");
+    RUN(load_config_time_format);
 
     SUITE("load_config — robustness");
     RUN(load_config_ignores_comments);

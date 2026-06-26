@@ -20,11 +20,15 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#define CONFIG_DIR_NAME   "Orpheus"
+#define CONFIG_FILE_NAME  "orpheus.config"
+#define TEMPLATES_DIRNAME "templates"
+
 /**
- * @brief Runtime configuration loaded from ~/.orpheusrc.
+ * @brief Runtime configuration loaded from ~/.config/Orpheus/orpheus.config.
  * 
  * All fields have defaults set by config_defaults(). load_config() overwrites
- * them with values found in the user's rc file.
+ * them with values found in the user's config file.
  */
 typedef struct {
     int  tab_width;         /**< Spaces per Tab keypress. Default: 4 */
@@ -37,6 +41,11 @@ typedef struct {
     int  key_delay;         /**< Escape-sequence processing delay ms. Default: 50 */
     int  focus_mode;        /**< 0=normal, 1=focus/typewriter mode (Ctrl-T). Default: 0 */
     int  focus_width;       /**< Text column width in focus mode. Default: 72 */
+    char time_format[64];   /**< strftime() format string for the {{currentTime}}
+                                  template variable. Default: "%-m/%-d/%y" (e.g. "6/25/26").
+                                  Note: %-m/%-d (no leading zero) are glibc extensions;
+                                  on non-glibc systems (e.g. macOS/BSD libc) fall back to
+                                  %m/%d if the output looks wrong (zero-padded or literal). */
 } Config;
 
 /**
@@ -46,7 +55,7 @@ typedef struct {
 void config_defaults(Config *cfg);
 
 /**
- * @brief Load user settings from @c ~/.orpheusrc.
+ * @brief Load user settings from @c ~/.config/Orpheus/orpheus.config.
  * 
  * Reads key=value pairs, skipping blank lines and # comments. Unrecognised
  * keys are silently ignored. If the file does not exist the function returns
@@ -55,6 +64,19 @@ void config_defaults(Config *cfg);
  * @param cfg Pointer to the Config to populate.
  */
 void load_config(Config *cfg);
+
+/**
+ * @brief Build the absolute path of Orpheus's config directory.
+ *
+ * Writes "$HOME/.config/Orpheus" into @p out, creating no directories.
+ * Used by load_config() and by the template loader so both agree on a
+ * single source of truth for where Orpheus keeps its files.
+ *
+ * @param out     Destination buffer.
+ * @param outsize Capacity of @p out.
+ * @return 1 on success, 0 if $HOME is unset or the path would not fit.
+ */
+int config_dir_path(char *out, int outsize);
 
 /**
  * @brief Global editor configuration — initialised once in main().
