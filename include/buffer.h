@@ -46,6 +46,10 @@ typedef struct {
     int  word_count;            /**< Cached word count; invalid when stats_dirty. */
     int  stats_dirty;           /**< Non-zero when word_count needs a full rescan. */
     int  current_line;          /**< Zero-based line the cursor is on. */
+    int sel_active;             /**< 1 while a selection exists (drag in progress completed and not yet cleared by another edit/move). */
+    int sel_anchor;             /**< logical position where the selection/drag started. */
+    int sel_start;              /** normalised (start <= end) logical range, recomputed any time the anchor or cursor changes while a selection is active. sel_end is exclusive.*/
+    int sel_end;                /** normalised (start <= end) logical range, recomputed any time the anchor or cursor changes while a selection is active. sel_end is exclusive.*/
 } Buffer;
 
 /**
@@ -153,6 +157,62 @@ int pos_to_line(EditorContext *edcon, int pos);
  * @param new_cursor Position after the move.
  */
 void update_current_line_delta(EditorContext *edcon, int old_cursor, int new_cursor);
+
+// --- Mouse Selection Helpers ---
+
+/**
+ * @brief Clear any active selection on the active buffer.
+ *
+ * Resets @c sel_active to 0. The anchor/start/end values are left as-is
+ * (stale) since they are only ever read while @c sel_active is set.
+ *
+ * @param edcon The EditorContext Instance.
+ */
+void clear_selection(EditorContext *edcon);
+
+/**
+ * @brief Begin a new selection anchored at logical position @p pos.
+ *
+ * Called on a left-mouse-button press in the text area. Until update_selection()
+ * is called again the selection is a zero-length range at @p pos.
+ *
+ * @param edcon The EditorContext Instance.
+ * @param pos   Logical character offset where the drag/selection started.
+ */
+void start_selection(EditorContext *edcon, int pos);
+
+/**
+ * @brief Extend the in-progress selection to logical position @p pos.
+ *
+ * Recomputes the normalised [sel_start, sel_end) range from the fixed
+ * @c sel_anchor and the new endpoint @p pos, so the range is always valid
+ * regardless of whether the user dragged left or right of the anchor.
+ * Does nothing if no selection is active (call start_selection() first).
+ *
+ * @param edcon The EditorContext Instance.
+ * @param pos   Logical character offset of the current drag/cursor position.
+ */
+void update_selection(EditorContext *edcon, int pos);
+
+/**
+ * @brief Report whether the active buffer currently has a non-empty selection.
+ *
+ * @param edcon The EditorContext Instance.
+ * @return 1 if @c sel_active is set and the range is non-empty, 0 otherwise.
+ */
+int has_selection(EditorContext *edcon);
+
+/**
+ * @brief Fetch the normalised selection range, if any.
+ *
+ * @param edcon The EditorContext Instance.
+ * @param start Out-param receiving the (inclusive) start offset.
+ * @param end   Out-param receiving the (exclusive) end offset.
+ * @return 1 and populates the out-params if a non-empty selection exists,
+ *         0 otherwise (out-params left untouched).
+ */
+int selection_range(EditorContext *edcon, int *start, int *end);
+
  
 /** 
  * @brief Write a formatted message into E.status (printf-style). 

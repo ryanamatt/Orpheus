@@ -28,6 +28,10 @@
  * Ctrl-F   find  (Enter to cycle, Esc to cancel)
  * Ctrl-R   replace (prompts for search term, replacement, then all/next)
  * Ctrl-G   go to line
+ * Mouse drag   select text (click and drag over text to highlight it)
+ * Ctrl-C   copy selection
+ * Ctrl-X   cut selection
+ * Ctrl-V   paste at cursor (replaces selection if any)
  * Ctrl-K   cut line
  * Ctrl-U   paste (yank) line
  * Ctrl-D   delete line
@@ -184,6 +188,10 @@ int handle_args(Config *cfg_ptr, EditorContext *edcon, int argc, char *argv[]) {
         printf(" Ctrl-F             Find  (Enter to cycle, Esc to cancel)\n");
         printf(" Ctrl-R             Replace (search, replacement, then All/Next)\n");
         printf(" Ctrl-G             Go to line\n");
+        printf(" Mouse drag         Select text\n");
+        printf(" Ctrl-C             Copy selection\n");
+        printf(" Ctrl-X             Cut selection\n");
+        printf(" Ctrl-V             Paste at cursor (replaces selection if any)\n");
         printf(" Ctrl-K             Cut line\n");
         printf(" Ctrl-U             Paste (yank) line\n");
         printf(" Ctrl-D             Delete line\n");

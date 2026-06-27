@@ -170,6 +170,59 @@ void delete_line(EditorContext *edcon);
  * */
 void goto_line(EditorContext *edcon);
 
+// --- Mouse-Selection Clipboard Operations ---
+
+/**
+ * @brief Copy the current mouse selection to the clipboard (Ctrl-C).
+ *
+ * Copies the selected characters into @c edcon->buffer->clipboard and
+ * mirrors them to the system clipboard if a backend is available. The
+ * buffer contents and selection are left untouched. Does nothing and sets
+ * a status message if no selection is active.
+ *
+ * @param edcon The EditorContext Instance.
+ */
+void copy_selection(EditorContext *edcon);
+
+/**
+ * @brief Cut the current mouse selection to the clipboard (Ctrl-X).
+ *
+ * Equivalent to copy_selection() followed by removing the selected text
+ * from the buffer. The cursor is left at the start of where the selection
+ * used to be, and the selection is cleared. Does nothing and sets a status
+ * message if no selection is active.
+ *
+ * @param edcon The EditorContext Instance.
+ */
+void cut_selection(EditorContext *edcon);
+
+/**
+ * @brief Remove the current mouse selection without copying it (Backspace/Delete).
+ *
+ * Removes the selected characters from the buffer and places the cursor
+ * at the start of where the selection used to be. The clipboard is left
+ * untouched. Does nothing if no selection is active.
+ *
+ * @param edcon The EditorContext Instance.
+ */
+void delete_selection(EditorContext *edcon);
+
+/**
+ * @brief Paste clipboard contents at the cursor, replacing any selection (Ctrl-V).
+ *
+ * Prefers the system clipboard, same as paste_line(): if a backend is
+ * available and has content, that text is used and cached into
+ * @c edcon->buffer->clipboard. Otherwise falls back to the internal
+ * clipboard set by a previous copy_selection() / cut_selection() /
+ * cut_line(). Unlike paste_line(), this inserts the raw clipboard text
+ * directly at the cursor position (no implicit trailing newline), and if
+ * a selection is active it is deleted first so the pasted text replaces it.
+ * Does nothing and sets a status message if both sources are empty.
+ *
+ * @param edcon The EditorContext Instance.
+ */
+void paste_at_cursor(EditorContext *edcon);
+
 // --- Quit Confirmation ---
 
 /**

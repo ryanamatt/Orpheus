@@ -28,6 +28,7 @@
 #define CP_CMDBAR 3
 #define CP_LNUM   4
 #define CP_SEARCH 5
+#define CP_SELECT 6
 
 /**
  * @brief Initialise ncurses and apply colour-scheme settings from cfg.

@@ -55,12 +55,14 @@ void init_ncurses(Config *cfg_ptr) {
             init_pair(CP_CMDBAR, COLOR_BLACK,  COLOR_CYAN);
             init_pair(CP_LNUM,   COLOR_YELLOW, COLOR_BLACK);
             init_pair(CP_SEARCH, COLOR_BLACK,  COLOR_YELLOW);
+            init_pair(CP_SELECT, COLOR_WHITE,  COLOR_BLUE);
         } else if (strcmp(cfg_ptr->color_scheme, "light") == 0) {
             init_pair(CP_NORMAL, COLOR_BLACK,  COLOR_WHITE);
             init_pair(CP_STATUS, COLOR_WHITE,  COLOR_BLUE);
             init_pair(CP_CMDBAR, COLOR_WHITE,  COLOR_BLUE);
             init_pair(CP_LNUM,   COLOR_BLUE,   COLOR_WHITE);
             init_pair(CP_SEARCH, COLOR_WHITE,  COLOR_RED);
+            init_pair(CP_SELECT, COLOR_WHITE,  COLOR_BLUE);
         } else {
             // default: use terminal's own colours
             init_pair(CP_NORMAL, -1,           -1);
@@ -68,13 +70,19 @@ void init_ncurses(Config *cfg_ptr) {
             init_pair(CP_CMDBAR, -1,           -1);
             init_pair(CP_LNUM,   COLOR_YELLOW, -1);
             init_pair(CP_SEARCH, COLOR_BLACK,  COLOR_YELLOW);
+            init_pair(CP_SELECT, COLOR_WHITE,  COLOR_BLUE);
         }
     }
 
     curs_set(cfg_ptr->cursor_style);
 
-    // Enable mouse: click-to-position and scroll wheel
-    mousemask(BUTTON1_PRESSED | BUTTON4_PRESSED | BUTTON5_PRESSED, NULL);
+    // Enable mouse: click-to-position, drag-to-select, and scroll wheel.
+    // BUTTON1_PRESSED starts a selection; REPORT_MOUSE_POSITION delivers
+    // motion events (while button 1 is held, tracked manually in
+    // handle_mouse) so the selection can be extended live;
+    // BUTTON1_RELEASED finalises it.
+    mousemask(BUTTON1_PRESSED | BUTTON1_RELEASED |
+              REPORT_MOUSE_POSITION | BUTTON4_PRESSED | BUTTON5_PRESSED, NULL);
     mouseinterval(0);  // no click interval - report press immediately
 }
 
@@ -144,6 +152,11 @@ void draw_rows(Config *cfg_ptr, EditorContext *edcon) {
     char fmt[16];
     snprintf(fmt, sizeof(fmt), "%%%dd ", cfg_ptr->gutter_width - 1);
 
+    // Mouse selection range (if any), used below to reverse-highlight
+    // characters as they're drawn. sel_end is exclusive.
+    int sel_s = 0, sel_e = 0;
+    int have_sel = selection_range(edcon, &sel_s, &sel_e);
+
     for (int y = 0; y < text_rows; y++) {
         int ln = y + edcon->buffer->row_off;
         move(y, 0);
@@ -158,6 +171,8 @@ void draw_rows(Config *cfg_ptr, EditorContext *edcon) {
                 int col = 0;
                 for (int i = s; i < end; i++) {
                     char c = gap_char(&edcon->buffer->text, i);
+                    int selected = have_sel && i >= sel_s && i < sel_e;
+                    if (selected) attron(COLOR_PAIR(CP_SELECT) | A_REVERSE);
                     if (c == '\t') {
                         int next = (col / cfg_ptr->tab_width + 1) * cfg_ptr->tab_width;
                         while (col < next && col - edcon->buffer->col_off < usable_cols) {
@@ -172,6 +187,7 @@ void draw_rows(Config *cfg_ptr, EditorContext *edcon) {
                                     (unsigned char)c);
                         col++;
                     }
+                    if (selected) attroff(COLOR_PAIR(CP_SELECT) | A_REVERSE);
                 }
             }
             attroff(COLOR_PAIR(CP_NORMAL));
@@ -196,6 +212,8 @@ void draw_rows(Config *cfg_ptr, EditorContext *edcon) {
                 int col = 0;
                 for (int i = s; i < end; i++) {
                     char c = gap_char(&edcon->buffer->text, i);
+                    int selected = have_sel && i >= sel_s && i < sel_e;
+                    if (selected) attron(COLOR_PAIR(CP_SELECT) | A_REVERSE);
                     if (c == '\t') {
                         int next = (col / cfg_ptr->tab_width + 1) * cfg_ptr->tab_width;
                         while (col < next && col - edcon->buffer->col_off < edcon->buffer->cols - 5) {
@@ -208,6 +226,7 @@ void draw_rows(Config *cfg_ptr, EditorContext *edcon) {
                             addch((unsigned char)c);
                         col++;
                     }
+                    if (selected) attroff(COLOR_PAIR(CP_SELECT) | A_REVERSE);
                 }
             }
             clrtoeol();
@@ -336,7 +355,7 @@ void draw_statusbar(Config *cfg_ptr, EditorContext *edcon) {
 void draw_cmdbar(EditorContext *edcon) {
     attron(COLOR_PAIR(CP_CMDBAR));
     move(edcon->buffer->rows - 1, 0);
-    printw(" ^S Save  ^Q Quit  ^F Find  ^R Repl  ^G Go-To  ^K Cut  ^U Paste  ^D Del-Ln  ^W Hide  ^N Next  ^P Prev");
+    printw(" ^S Save  ^Q Quit  ^F Find  ^R Repl  ^G Go-To  ^C Copy  ^X Cut  ^V Paste  ^K Cut-Ln  ^U Paste-Ln  ^D Del-Ln  ^W Hide  ^N Next  ^P Prev");
     clrtoeol();
     attroff(COLOR_PAIR(CP_CMDBAR));
 }
