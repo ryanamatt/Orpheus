@@ -87,10 +87,24 @@ int main_input(Config *cfg_ptr, EditorContext *edcon) {
         goto_line(edcon);
         break;
 
-    // Cut / Paste / Delete
+    // Cut / Paste / Delete (whole line)
     case ('k' & 0x1f): cut_line(edcon);   break;
     case ('u' & 0x1f): paste_line(edcon); break;
     case ('d' & 0x1f): delete_line(edcon); break;
+
+    // Mouse-selection Copy / Cut / Paste
+    case ('c' & 0x1f): // Ctrl-C
+        log_debug("main_input: Ctrl-C copy invoked");
+        copy_selection(edcon);
+        break;
+    case ('x' & 0x1f): // Ctrl-X
+        log_debug("main_input: Ctrl-X cut invoked");
+        cut_selection(edcon);
+        break;
+    case ('v' & 0x1f): // Ctrl-V
+        log_debug("main_input: Ctrl-V paste invoked");
+        paste_at_cursor(edcon);
+        break;
 
     // Toggle Status
     case ('w' & 0x1f):
@@ -181,22 +195,28 @@ int main_input(Config *cfg_ptr, EditorContext *edcon) {
         }
         break;
 
-    // Movement
-    case KEY_UP:         move_up(cfg_ptr, edcon);          break;
-    case KEY_DOWN:       move_down(cfg_ptr, edcon);        break;
-    case KEY_LEFT:       move_left(edcon);              break;
-    case KEY_RIGHT:      move_right(edcon);             break;
+    // Movement (plain navigation clears any active mouse selection, same
+    // as Shift-less arrow keys do in most editors)
+    case KEY_UP:         clear_selection(edcon); move_up(cfg_ptr, edcon);          break;
+    case KEY_DOWN:       clear_selection(edcon); move_down(cfg_ptr, edcon);        break;
+    case KEY_LEFT:       clear_selection(edcon); move_left(edcon);              break;
+    case KEY_RIGHT:      clear_selection(edcon); move_right(edcon);             break;
     case KEY_HOME:
-    case ('a' & 0x1f):   move_line_start(edcon);        break;
+    case ('a' & 0x1f):   clear_selection(edcon); move_line_start(edcon);        break;
     case KEY_END:
-    case ('e' & 0x1f):   move_line_end(edcon);          break;
-    case KEY_PPAGE:      move_page_up(cfg_ptr, edcon);     break;
-    case KEY_NPAGE:      move_page_down(cfg_ptr, edcon);   break;
+    case ('e' & 0x1f):   clear_selection(edcon); move_line_end(edcon);          break;
+    case KEY_PPAGE:      clear_selection(edcon); move_page_up(cfg_ptr, edcon);     break;
+    case KEY_NPAGE:      clear_selection(edcon); move_page_down(cfg_ptr, edcon);   break;
 
     // Editing
     case KEY_BACKSPACE:
     case 127:
     case '\b':
+        if (has_selection(edcon)) {
+            delete_selection(edcon);
+            break;
+        }
+
         // Check if cursor is at the start of a line and not on line 1
         if (edcon->buffer->current_line > 0 
             && edcon->buffer->cursor == line_start(edcon, edcon->buffer->current_line)) {
@@ -229,6 +249,10 @@ int main_input(Config *cfg_ptr, EditorContext *edcon) {
         break;
 
     case KEY_DC: // Delete Key
+        if (has_selection(edcon)) {
+            delete_selection(edcon);
+            break;
+        }
         if (edcon->buffer->cursor < gap_len(&edcon->buffer->text)) {
             gap_delete(&edcon->buffer->text, edcon->buffer->cursor);
             edcon->buffer->dirty = 1;
@@ -236,6 +260,7 @@ int main_input(Config *cfg_ptr, EditorContext *edcon) {
         break;
 
     case '\t':
+        if (has_selection(edcon)) delete_selection(edcon);
         for (int i = 0; i < cfg_ptr->tab_width; i++) {
             gap_insert(&edcon->buffer->text, edcon->buffer->cursor, ' ');
             edcon->buffer->cursor++;
@@ -246,6 +271,7 @@ int main_input(Config *cfg_ptr, EditorContext *edcon) {
 
     case '\n':
     case KEY_ENTER:
+        if (has_selection(edcon)) delete_selection(edcon);
         gap_insert(&edcon->buffer->text, edcon->buffer->cursor, '\n');
         edcon->buffer->cursor++;
         update_stats(edcon, '\n', +1);
@@ -272,6 +298,7 @@ int main_input(Config *cfg_ptr, EditorContext *edcon) {
 
     default:
         if (c >= 32 && c < 256 && c != 127) {
+            if (has_selection(edcon)) delete_selection(edcon);
             gap_insert(&edcon->buffer->text, edcon->buffer->cursor, (char)c);
             edcon->buffer->cursor++;
             update_stats(edcon, (char)c, +1);
@@ -474,12 +501,47 @@ int vcol_to_pos(Config *cfg_ptr, EditorContext *edcon, int ln, int target_vcol) 
 }
 
 /**
+ * @brief Translate a screen coordinate in the text area to a logical buffer position.
+ *
+ * Shared by the press/drag/release branches of handle_mouse() so they all
+ * agree on exactly how gutter width, vertical scroll (row_off), and
+ * horizontal scroll (col_off) are accounted for.
+ *
+ * @param cfg_ptr A pointer to the Config Instance.
+ * @param edcon   The EditorContext Instance.
+ * @param ev      The mouse event whose @c x / @c y screen coordinates are used.
+ * @return Logical character offset corresponding to @p ev, clamped to a
+ *         valid line and column.
+ */
+static int mouse_event_to_pos(Config *cfg_ptr, EditorContext *edcon, MEVENT *ev) {
+    int clicked_line = ev->y + edcon->buffer->row_off;
+    int total = total_lines(edcon);
+    if (clicked_line < 0) clicked_line = 0;
+    if (clicked_line >= total) clicked_line = total - 1;
+
+    // ev.x includes the gutter; subtract it to get the visual column,
+    // then add the horizontal scroll offset to get the true vcol.
+    int gutter = cfg_ptr->focus_mode ? 0 : cfg_ptr->gutter_width;
+    int clicked_vcol = (ev->x - gutter) + edcon->buffer->col_off;
+    if (clicked_vcol < 0) clicked_vcol = 0;
+
+    return vcol_to_pos(cfg_ptr, edcon, clicked_line, clicked_vcol);
+}
+
+/**
  * @brief Handle a mouse event from ncurses.
  *
  * Reads the pending MEVENT and dispatches:
  * - BUTTON1_PRESSED in the tab bar row: switch to the clicked buffer tab.
- * - BUTTON1_PRESSED in the text area: move the cursor to the clicked position,
- *   clamping to the nearest valid character.
+ * - BUTTON1_PRESSED in the text area: move the cursor to the clicked position
+ *   and start a new selection anchored there (clearing any previous one).
+ * - Motion (REPORT_MOUSE_POSITION) while button 1 is being held (tracked via
+ *   a local flag, since ncurses motion events don't carry BUTTON1_PRESSED in
+ *   bstate), in the text area: extend the in-progress selection to the new
+ *   position and move the cursor there.
+ * - BUTTON1_RELEASED: finalise the selection. A release at the same spot as
+ *   the press (no drag occurred) clears the selection, so a simple click
+ *   still just repositions the cursor.
  * - BUTTON4_PRESSED (scroll up) / BUTTON5_PRESSED (scroll down): scroll the
  *   viewport by three lines.
  *
@@ -490,6 +552,12 @@ int vcol_to_pos(Config *cfg_ptr, EditorContext *edcon, int ln, int target_vcol) 
  * @param edcon   The EditorContext Instance.
  */
 void handle_mouse(Config *cfg_ptr, EditorContext *edcon) {
+    // ncurses motion events (REPORT_MOUSE_POSITION) don't reliably carry
+    // BUTTON1_PRESSED in bstate - that bit is only set on the initial press.
+    // Track "is button 1 currently held" ourselves so a motion event can be
+    // told apart from a hover/no-button move.
+    static int button1_down = 0;
+
     MEVENT ev;
     if (getmouse(&ev) != OK) return;
 
@@ -533,26 +601,46 @@ void handle_mouse(Config *cfg_ptr, EditorContext *edcon) {
         log_debug("handle_mouse: scroll down");
         return;
     }
- 
-    // Left click in text area -> position cursor
+
+    // Left button pressed in text area -> position cursor, start a selection
     if ((ev.bstate & BUTTON1_PRESSED) && ev.y < text_rows) {
-        int clicked_line = ev.y + edcon->buffer->row_off;
-        int total = total_lines(edcon);
-        if (clicked_line >= total) clicked_line = total - 1;
- 
-        // ev.x includes the gutter; subtract it to get the visual column,
-        // then add the horizontal scroll offset to get the true vcol.
-        int clicked_vcol = (ev.x - cfg_ptr->gutter_width) + edcon->buffer->col_off;
-        if (clicked_vcol < 0) clicked_vcol = 0;
- 
-        int new_pos = vcol_to_pos(cfg_ptr, edcon, clicked_line, clicked_vcol);
+        button1_down = 1;
+        int new_pos = mouse_event_to_pos(cfg_ptr, edcon, &ev);
         edcon->buffer->cursor = new_pos;
-        edcon->buffer->current_line = clicked_line;
-        log_debug("handle_mouse: click row=%d col=%d -> line=%d pos=%d (was %d)",
-                  ev.y, ev.x, clicked_line, new_pos, edcon->buffer->cursor);
+        edcon->buffer->current_line = pos_to_line(edcon, new_pos);
+        start_selection(edcon, new_pos);
+        log_debug("handle_mouse: press row=%d col=%d -> pos=%d (selection started)",
+                  ev.y, ev.x, new_pos);
+        return;
+    }
+
+    // Motion while button 1 is held (drag) in text area -> extend selection
+    if ((ev.bstate & REPORT_MOUSE_POSITION) && button1_down && ev.y < text_rows) {
+        if (!edcon->buffer->sel_active) return; // no press seen yet - ignore stray motion
+        int new_pos = mouse_event_to_pos(cfg_ptr, edcon, &ev);
+        edcon->buffer->cursor = new_pos;
+        edcon->buffer->current_line = pos_to_line(edcon, new_pos);
+        update_selection(edcon, new_pos);
+        log_debug("handle_mouse: drag row=%d col=%d -> pos=%d", ev.y, ev.x, new_pos);
+        return;
+    }
+
+    // Left button released -> finalise the selection. If the release lands
+    // on the same position as the press (i.e. a plain click, no drag), treat
+    // it as "just move the cursor" and clear the selection.
+    if (ev.bstate & BUTTON1_RELEASED) {
+        button1_down = 0;
+        if (edcon->buffer->sel_active && ev.y < text_rows) {
+            int new_pos = mouse_event_to_pos(cfg_ptr, edcon, &ev);
+            update_selection(edcon, new_pos);
+        }
+        if (!has_selection(edcon)) clear_selection(edcon);
+        log_debug("handle_mouse: release -> selection %s",
+                  has_selection(edcon) ? "active" : "cleared");
         return;
     }
 }
+
 
 // --- Command Operations ---
 
@@ -852,6 +940,155 @@ void goto_line(EditorContext *edcon) {
     edcon->buffer->current_line = ln;
     log_debug("goto_line: jumped to line %d (pos=%d)", ln + 1, s);
     set_status(edcon, "Jumped to line %d", ln + 1);
+}
+
+// --- Mouse-Selection Clipboard Operations ---
+
+/**
+ * @brief Copy the current mouse selection to the clipboard (Ctrl-C).
+ *
+ * Copies the selected characters into @c edcon->buffer->clipboard and
+ * mirrors them to the system clipboard if a backend is available. The
+ * buffer contents and selection are left untouched. Does nothing and sets
+ * a status message if no selection is active.
+ *
+ * @param edcon The EditorContext Instance.
+ */
+void copy_selection(EditorContext *edcon) {
+    int start, end;
+    if (!selection_range(edcon, &start, &end)) {
+        set_status(edcon, "No selection to copy");
+        return;
+    }
+
+    int clen = 0;
+    for (int i = start; i < end; i++)
+        if (clen < (int)sizeof(edcon->buffer->clipboard) - 1)
+            edcon->buffer->clipboard[clen++] = gap_char(&edcon->buffer->text, i);
+    edcon->buffer->clipboard[clen] = '\0';
+    edcon->buffer->cb_len = clen;
+
+    int synced = clipboard_set(edcon->buffer->clipboard, clen);
+
+    log_debug("copy_selection: copied %d chars [%d,%d) (system clipboard %s)",
+              clen, start, end, synced ? "synced" : "unavailable");
+    set_status(edcon, synced ? "Copied (to system clipboard)" : "Copied");
+}
+
+/**
+ * @brief Cut the current mouse selection to the clipboard (Ctrl-X).
+ *
+ * Equivalent to copy_selection() followed by removing the selected text
+ * from the buffer. The cursor is left at the start of where the selection
+ * used to be, and the selection is cleared. Does nothing and sets a status
+ * message if no selection is active.
+ *
+ * @param edcon The EditorContext Instance.
+ */
+void cut_selection(EditorContext *edcon) {
+    int start, end;
+    if (!selection_range(edcon, &start, &end)) {
+        set_status(edcon, "No selection to cut");
+        return;
+    }
+
+    int clen = 0;
+    for (int i = start; i < end; i++)
+        if (clen < (int)sizeof(edcon->buffer->clipboard) - 1)
+            edcon->buffer->clipboard[clen++] = gap_char(&edcon->buffer->text, i);
+    edcon->buffer->clipboard[clen] = '\0';
+    edcon->buffer->cb_len = clen;
+
+    int synced = clipboard_set(edcon->buffer->clipboard, clen);
+
+    for (int i = start; i < end; i++) gap_delete(&edcon->buffer->text, start);
+
+    edcon->buffer->cursor = start;
+    edcon->buffer->dirty  = 1;
+    clear_selection(edcon);
+    rebuild_line_count(edcon);
+    edcon->buffer->current_line = pos_to_line(edcon, edcon->buffer->cursor);
+
+    log_debug("cut_selection: cut %d chars [%d,%d) (system clipboard %s)",
+              clen, start, end, synced ? "synced" : "unavailable");
+    set_status(edcon, synced ? "Cut selection (copied to system clipboard)" : "Cut selection");
+}
+
+/**
+ * @brief Remove the current mouse selection without copying it (Backspace/Delete).
+ *
+ * Removes the selected characters from the buffer and places the cursor
+ * at the start of where the selection used to be. The clipboard is left
+ * untouched. Does nothing if no selection is active.
+ *
+ * @param edcon The EditorContext Instance.
+ */
+void delete_selection(EditorContext *edcon) {
+    int start, end;
+    if (!selection_range(edcon, &start, &end)) return;
+
+    for (int i = start; i < end; i++) gap_delete(&edcon->buffer->text, start);
+
+    edcon->buffer->cursor = start;
+    edcon->buffer->dirty  = 1;
+    clear_selection(edcon);
+    rebuild_line_count(edcon);
+    edcon->buffer->current_line = pos_to_line(edcon, edcon->buffer->cursor);
+
+    log_debug("delete_selection: deleted %d chars [%d,%d)", end - start, start, end);
+    set_status(edcon, "Deleted selection");
+}
+
+/**
+ * @brief Paste clipboard contents at the cursor, replacing any selection (Ctrl-V).
+ *
+ * Prefers the system clipboard, same as paste_line(): if a backend is
+ * available and has content, that text is used and cached into
+ * @c edcon->buffer->clipboard. Otherwise falls back to the internal
+ * clipboard set by a previous copy_selection() / cut_selection() /
+ * cut_line(). Unlike paste_line(), this inserts the raw clipboard text
+ * directly at the cursor position (no implicit trailing newline), and if
+ * a selection is active it is deleted first so the pasted text replaces it.
+ * Does nothing and sets a status message if both sources are empty.
+ *
+ * @param edcon The EditorContext Instance.
+ */
+void paste_at_cursor(EditorContext *edcon) {
+    int from_system = 0;
+
+    if (clipboard_available()) {
+        char sysbuf[sizeof(edcon->buffer->clipboard)];
+        int n = clipboard_get(sysbuf, sizeof(sysbuf));
+        if (n > 0) {
+            memcpy(edcon->buffer->clipboard, sysbuf, (size_t)n);
+            edcon->buffer->clipboard[n] = '\0';
+            edcon->buffer->cb_len = n;
+            from_system = 1;
+        }
+    }
+
+    if (!edcon->buffer->cb_len) { set_status(edcon, "Clipboard empty"); return; }
+
+    // Replace the selection, if any, with the pasted text.
+    int start, end;
+    if (selection_range(edcon, &start, &end)) {
+        for (int i = start; i < end; i++) gap_delete(&edcon->buffer->text, start);
+        edcon->buffer->cursor = start;
+        clear_selection(edcon);
+    }
+
+    int pos = edcon->buffer->cursor;
+    for (int i = 0; i < edcon->buffer->cb_len; i++)
+        gap_insert(&edcon->buffer->text, pos + i, edcon->buffer->clipboard[i]);
+
+    edcon->buffer->cursor = pos + edcon->buffer->cb_len;
+    edcon->buffer->dirty  = 1;
+    rebuild_line_count(edcon);
+    edcon->buffer->current_line = pos_to_line(edcon, edcon->buffer->cursor);
+
+    log_debug("paste_at_cursor: pasted %d chars at pos %d (source: %s)",
+              edcon->buffer->cb_len, pos, from_system ? "system clipboard" : "internal clipboard");
+    set_status(edcon, from_system ? "Pasted (from system clipboard)" : "Pasted");
 }
 
 // --- Quit Confirmation ---
