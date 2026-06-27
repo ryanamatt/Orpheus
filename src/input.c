@@ -17,6 +17,16 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#define NCURSES_MOUSE_VERSION 2
+
+#ifndef REPORT_MOUSE_POSITION
+#define REPORT_MOUSE_POSITION 0x20000000L
+#endif
+
+#ifndef BUTTON1_RELEASED
+#define BUTTON1_RELEASED 0x00000002L
+#endif
+
 #include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
