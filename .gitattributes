@@ -3,12 +3,11 @@
 *.c text eol=lf
 *.h text eol=lf
 Makefile text eol=lf
+*.sh text eol=lf
 
-*.md text
-.orpheusrc text
-.orpheusrc.example text
-
-*.o binary
-orp binary
+Doxyfile text eol=lf
+*.md text eol=lf
+orpheus.config.example text eol=lf
+LICENSE text eol=lf
 
 tests/** linguist-vendored
