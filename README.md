@@ -83,50 +83,58 @@ orp [file file2 ...]
 | **Ctrl-P** | Go to previous tab |
 | **Ctrl-N** | Go to next tab |
 
+## Templates
+
+```Bash
+orp -t NAME [file file2 ...]
+orp --template NAME [file file2 ...]
+```
+
+For every filename argument that does **not** already exist on disk, `-t`/`--template` populates
+the new buffer with `~/.config/Orpheus/templates/NAME.tmpl` instead of leaving it empty. Files
+that already exist are always opened as-is - the template is never applied to them. If no
+filename is given at all, the template is applied to the new unnamed buffer instead.
+
+Templates are plain text files and may use the placeholder `{{currentTime}}`, which is expanded
+via `strftime()` using the [`time_format`](docs/CONFIGURATION.md) setting. For example, given
+`~/.config/Orpheus/templates/chapter.tmpl`:
+
+```Text
+-----
+Chapter 1
+Draft 1
+First Time: {{currentTime}}
+Last Update: {{currentTime}}
+-----
+```
+
+Running:
+
+```Bash
+orp -t chapter draft.txt
+```
+
+populates `draft.txt` with the template above (assuming `draft.txt` doesn't already exist),
+expanding both `{{currentTime}}` placeholders to the current date/time.
+
 ## Configuration
 
-You can customize Orpheus by creating a ~/.config/Orpheus/orpheus.config file. The format uses
-setting=value. Comments start with \#.
+You can customize Orpheus by creating a `~/.config/Orpheus/orpheus.config` file. The format uses
+`setting=value`. Comments start with `#`.
 
 Example:
 
 ```config
-# Set tab width to 4 spaces  
+# Set tab width to 4 spaces
 tab_width=4
 ```
 
-See orpheus.config.example for an example file.
+Colours are fully customizable too, either by choosing a built-in `color_scheme` or by overriding
+individual UI colours (text, status bar, line numbers, search highlight, and more).
 
-Full Conguration Settings:
-
-* tab_width (int): Sets the number of spaces to tab over
-* show_line_numbers (int): If 0, hides the line-number gutter. Any other value shows it. Default: 1
-* auto_indent (int): If non-zero, pressing Enter copies the leading whitespace of the current line
-to the new line automatically. Default: 1.
-
-* show_statusbar (int): If 0, hides the bottom status/command bar, giving one extra row of text
-Default: 1.
-
-* cursor_style (int): Controls the terminal cursor shape passed to curs_set() 0 = invisible, 1 =
-normal (default), 2 = very visible / block.
-
-* color_scheme (string): Built-in colour theme for the UI chrome.f
-  * default  - system default colours (no change)
-  * dark     - white text on dark backgrounds
-  * light    - black text on light backgrounds
-  * mono     - disables colour entirely (A_REVERSE for highlights)
-
-* gutter_width (int):The number of spaces for the width of the line number gutter. Default 5.
-
-* key_delay (int): The time it takes to wait for escape-sequence processing. Default 50.
-
-* focus_mode (int): 0=normal, 1=focus/typewriter mode (Ctrl-T). Default: 0
-
-* focus_width (int) : Text column width in focus mode. Default: 72
-
-* time_format (string): strftime() format string used to expand {{currentTime}} in templates.
-Default: "%-m/%-d/%y" (e.g. "6/25/26"). Note: %-m/%-d are glibc extensions (no leading zero);
-on non-glibc systems use %m/%d instead.
+See [`orpheus_config.example`](orpheus_config.example) for an example file, and
+**[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** for the full settings reference, including all
+colour customization options.
 
 ## Documentation
 
