@@ -25,6 +25,15 @@
 #define TEMPLATES_DIRNAME "templates"
 
 /**
+ * @brief Sentinel meaning "not set in the config file - let color_scheme decide".
+ *
+ * Stored in each fg/bg color field below. Any ncurses color is >= -1
+ * (-1 is COLOR_DEFAULT under use_default_colors()), so -2 is safe as an
+ * "unset" marker that can never collide with a real resolved color.
+ */
+#define COLOR_UNSET (-2)
+
+/**
  * @brief Runtime configuration loaded from ~/.config/Orpheus/orpheus.config.
  * 
  * All fields have defaults set by config_defaults(). load_config() overwrites
@@ -46,6 +55,36 @@ typedef struct {
                                   Note: %-m/%-d (no leading zero) are glibc extensions;
                                   on non-glibc systems (e.g. macOS/BSD libc) fall back to
                                   %m/%d if the output looks wrong (zero-padded or literal). */
+
+    /**
+     * @name Per-pair color overrides
+     *
+     * Each field holds either an ncurses color value (COLOR_BLACK,
+     * COLOR_WHITE, -1 for the terminal default, etc.) or COLOR_UNSET if the
+     * user did not set it in the config file. When unset, init_ncurses()
+     * falls back to whatever color_scheme would normally assign that pair.
+     * Setting any color_*_fg or color_*_bg key in the config file overrides
+     * just that one value, on top of (or instead of) color_scheme - so a
+     * user can start from "dark" and only override the search highlight,
+     * for example.
+     *
+     * Recognised color names (case-insensitive) for these keys:
+     * black, red, green, yellow, blue, magenta, cyan, white, default.
+     * @{
+     */
+    int color_normal_fg;  /**< Default: COLOR_UNSET */
+    int color_normal_bg;  /**< Default: COLOR_UNSET */
+    int color_status_fg;  /**< Default: COLOR_UNSET */
+    int color_status_bg;  /**< Default: COLOR_UNSET */
+    int color_cmdbar_fg;  /**< Default: COLOR_UNSET */
+    int color_cmdbar_bg;  /**< Default: COLOR_UNSET */
+    int color_lnum_fg;    /**< Default: COLOR_UNSET */
+    int color_lnum_bg;    /**< Default: COLOR_UNSET */
+    int color_search_fg;  /**< Default: COLOR_UNSET */
+    int color_search_bg;  /**< Default: COLOR_UNSET */
+    int color_select_fg;  /**< Default: COLOR_UNSET */
+    int color_select_bg;  /**< Default: COLOR_UNSET */
+    /** @} */
 } Config;
 
 /**
@@ -77,6 +116,20 @@ void load_config(Config *cfg);
  * @return 1 on success, 0 if $HOME is unset or the path would not fit.
  */
 int config_dir_path(char *out, int outsize);
+
+/**
+ * @brief Translate a color name from the config file into an ncurses color.
+ *
+ * Recognises (case-insensitive): "black", "red", "green", "yellow", "blue",
+ * "magenta", "cyan", "white", and "default" (which maps to -1, the
+ * terminal's own color under use_default_colors()).
+ *
+ * @param name Null-terminated color name, as read from the config file.
+ * @return The corresponding ncurses color value, or COLOR_UNSET if @p name
+ *         is not a recognised color (in which case the caller should leave
+ *         the existing value untouched).
+ */
+int parse_color_name(const char *name);
 
 /**
  * @brief Global editor configuration — initialised once in main().

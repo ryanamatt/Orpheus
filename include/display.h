@@ -34,7 +34,9 @@
  * @brief Initialise ncurses and apply colour-scheme settings from cfg.
  *
  * Calls initscr(), raw(), noecho(), keypad(), set_escdelay(), starts colour
- * support (unless the scheme is "mono"), and sets the cursor shape.
+ * support (unless the scheme is "mono"), and sets the cursor shape. Any
+ * color_*_fg / color_*_bg values set in the config file override the
+ * active color_scheme's choice for that one pair - see config.h.
  * 
  * @param cfg_ptr A pointer to the Config Instance.
  */

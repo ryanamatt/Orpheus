@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <ncurses.h>
 #include "logger.h"
 #include "config.h"
 
@@ -42,6 +43,19 @@ void config_defaults(Config *cfg) {
     cfg->color_scheme[sizeof(cfg->color_scheme) - 1] = '\0';
     strncpy(cfg->time_format, "%-m/%-d/%y", sizeof(cfg->time_format) - 1);
     cfg->time_format[sizeof(cfg->time_format) - 1] = '\0';
+
+    cfg->color_normal_fg = COLOR_UNSET;
+    cfg->color_normal_bg = COLOR_UNSET;
+    cfg->color_status_fg = COLOR_UNSET;
+    cfg->color_status_bg = COLOR_UNSET;
+    cfg->color_cmdbar_fg = COLOR_UNSET;
+    cfg->color_cmdbar_bg = COLOR_UNSET;
+    cfg->color_lnum_fg   = COLOR_UNSET;
+    cfg->color_lnum_bg   = COLOR_UNSET;
+    cfg->color_search_fg = COLOR_UNSET;
+    cfg->color_search_bg = COLOR_UNSET;
+    cfg->color_select_fg = COLOR_UNSET;
+    cfg->color_select_bg = COLOR_UNSET;
 }
 
 char* trim(char* str) {
@@ -49,6 +63,40 @@ char* trim(char* str) {
     while(end > str && isspace((unsigned char)*end)) end--;
     end[1] = '\0';
     return str;
+}
+
+/**
+ * @brief Translate a color name from the config file into an ncurses color.
+ *
+ * Recognises (case-insensitive): "black", "red", "green", "yellow", "blue",
+ * "magenta", "cyan", "white", and "default" (-1, the terminal's own color
+ * under use_default_colors()).
+ *
+ * @param name Null-terminated color name, as read from the config file.
+ * @return The corresponding ncurses color value, or COLOR_UNSET if @p name
+ *         is not a recognised color.
+ */
+int parse_color_name(const char *name) {
+    if (!name) return COLOR_UNSET;
+
+    char buf[16];
+    size_t len = strlen(name);
+    if (len >= sizeof(buf)) return COLOR_UNSET;
+    for (size_t i = 0; i < len; i++) buf[i] = (char)tolower((unsigned char)name[i]);
+    buf[len] = '\0';
+
+    if (strcmp(buf, "black")   == 0) return COLOR_BLACK;
+    if (strcmp(buf, "red")     == 0) return COLOR_RED;
+    if (strcmp(buf, "green")   == 0) return COLOR_GREEN;
+    if (strcmp(buf, "yellow")  == 0) return COLOR_YELLOW;
+    if (strcmp(buf, "blue")    == 0) return COLOR_BLUE;
+    if (strcmp(buf, "magenta") == 0) return COLOR_MAGENTA;
+    if (strcmp(buf, "cyan")    == 0) return COLOR_CYAN;
+    if (strcmp(buf, "white")   == 0) return COLOR_WHITE;
+    if (strcmp(buf, "default") == 0) return -1;
+
+    log_error("parse_color_name: unrecognised color '%s' - ignoring", name);
+    return COLOR_UNSET;
 }
 
 /**
@@ -73,6 +121,31 @@ int config_dir_path(char *out, int outsize) {
         log_error("config_dir_path: path too long for buffer (%d bytes needed)", n);
         return 0;
     }
+    return 1;
+}
+
+/**
+ * @brief Match @p key against @p name and, if equal, resolve @p val as a
+ *        color name into @p target.
+ *
+ * Strips trailing CR/LF from @p val (in place, same treatment as the other
+ * string-valued keys in load_config()) before resolving it. If the color
+ * name isn't recognised, parse_color_name() has already logged why and
+ * returned COLOR_UNSET; in that case @p target is left untouched, so a
+ * malformed line can't clobber a previously-set value with garbage.
+ *
+ * @param key    The trimmed key parsed from the current config line.
+ * @param val    The raw value string parsed from the current config line.
+ * @param name   The config key this color belongs to, e.g. "color_normal_fg".
+ * @param target Pointer to the Config field to update on a match.
+ * @return 1 if @p key matched @p name (regardless of whether the color was
+ *         valid), 0 otherwise - so callers can chain this with else-if.
+ */
+static int apply_color_key(const char *key, char *val, const char *name, int *target) {
+    if (strcmp(key, name) != 0) return 0;
+    val[strcspn(val, "\r\n")] = 0;
+    int resolved = parse_color_name(trim(val));
+    if (resolved != COLOR_UNSET) *target = resolved;
     return 1;
 }
 
@@ -158,6 +231,19 @@ void load_config(Config *c) {
                 strncpy(c->time_format, val, sizeof(c->time_format) - 1);
                 c->time_format[sizeof(c->time_format) - 1] = '\0';
             }
+
+            else if (apply_color_key(key, val, "color_normal_fg", &c->color_normal_fg)) {}
+            else if (apply_color_key(key, val, "color_normal_bg", &c->color_normal_bg)) {}
+            else if (apply_color_key(key, val, "color_status_fg", &c->color_status_fg)) {}
+            else if (apply_color_key(key, val, "color_status_bg", &c->color_status_bg)) {}
+            else if (apply_color_key(key, val, "color_cmdbar_fg", &c->color_cmdbar_fg)) {}
+            else if (apply_color_key(key, val, "color_cmdbar_bg", &c->color_cmdbar_bg)) {}
+            else if (apply_color_key(key, val, "color_lnum_fg",   &c->color_lnum_fg))   {}
+            else if (apply_color_key(key, val, "color_lnum_bg",   &c->color_lnum_bg))   {}
+            else if (apply_color_key(key, val, "color_search_fg", &c->color_search_fg)) {}
+            else if (apply_color_key(key, val, "color_search_bg", &c->color_search_bg)) {}
+            else if (apply_color_key(key, val, "color_select_fg", &c->color_select_fg)) {}
+            else if (apply_color_key(key, val, "color_select_bg", &c->color_select_bg)) {}
         }
     }
 }
