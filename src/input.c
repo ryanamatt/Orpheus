@@ -673,6 +673,10 @@ void do_find(EditorContext *edcon) {
     edcon->buffer->last_search_pos = edcon->buffer->cursor;
 
     int len = gap_len(&edcon->buffer->text);
+    if (len == 0) {
+        set_status("edcon", "Not found: \"%s\"", term);
+        return;
+    }
     int tlen = strlen(term);
     int start = (edcon->buffer->cursor + 1) % len;
 
