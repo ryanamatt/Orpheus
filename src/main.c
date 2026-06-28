@@ -107,6 +107,22 @@
  *   strftime() format string used to expand {{currentTime}} in templates.
  *   Default: "%-m/%-d/%y" (e.g. "6/25/26"). Note: %-m/%-d are glibc
  *   extensions (no leading zero); on non-glibc systems use %m/%d instead.
+ *
+ * color_normal_fg, color_normal_bg: string
+ * color_status_fg, color_status_bg: string
+ * color_cmdbar_fg, color_cmdbar_bg: string
+ * color_lnum_fg,   color_lnum_bg:   string
+ * color_search_fg, color_search_bg: string
+ * color_select_fg, color_select_bg: string
+ *   Per-pair colour overrides applied on top of color_scheme. Each key sets
+ *   just the foreground or background of one UI element (normal text,
+ *   status bar, command bar, line numbers, search highlight, or mouse
+ *   selection) - so a scheme can be used as a starting point and tweaked
+ *   without abandoning it. Unset keys keep whatever color_scheme assigns.
+ *   Recognised values (case-insensitive): black, red, green, yellow, blue,
+ *   magenta, cyan, white, default. Example:
+ *     color_scheme=dark
+ *     color_search_bg=magenta
  */
 
 #include <stdlib.h>

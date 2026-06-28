@@ -23,16 +23,32 @@
 #include "display.h"
 
 /**
+ * @brief Apply a config override on top of a scheme-supplied color, if set.
+ *
+ * @param override The Config field for this fg/bg slot (COLOR_UNSET or a
+ *                  resolved ncurses color - see config.h).
+ * @param scheme_color The color the active color_scheme would otherwise use.
+ * @return @p override if it was set by the user, otherwise @p scheme_color.
+ */
+static int resolve_color(int override, int scheme_color) {
+    return (override != COLOR_UNSET) ? override : scheme_color;
+}
+
+/**
  * @brief Initialise the ncurses library and apply colour scheme settings.
  *
  * Calls @c initscr(), enables raw input, disables echo, enables the keypad,
  * and sets the escape-sequence delay from @c KEY_DELAY. When the terminal
- * supports colour and the scheme is not @c "mono", initialises five colour
- * pairs (normal text, status bar, command bar, line numbers, search highlight)
- * according to the @c Ccfg_ptr->OLOR_SCHEME global:
+ * supports colour and the scheme is not @c "mono", initialises six colour
+ * pairs (normal text, status bar, command bar, line numbers, search
+ * highlight, selection) starting from the @c cfg_ptr->color_scheme palette:
  * - @c "dark"  — white on black palette.
  * - @c "light" — black on white palette.
  * - @c "default" — inherits the terminal's own colours.
+ *
+ * Any @c color_*_fg / @c color_*_bg value the user set in the config file
+ * (see config.h) then overrides the scheme's choice for that one slot, so
+ * a user can fine-tune individual colors without abandoning a named scheme.
  * 
  * @param cfg_ptr A pointer to the Config Instance.
  *
@@ -48,30 +64,48 @@ void init_ncurses(Config *cfg_ptr) {
     if (has_colors() && strcmp(cfg_ptr->color_scheme, "mono") != 0) {
         start_color();
         use_default_colors();
- 
+
+        // Start from the named scheme's palette...
+        int normal_fg, normal_bg, status_fg, status_bg, cmdbar_fg, cmdbar_bg,
+            lnum_fg,   lnum_bg,   search_fg, search_bg, select_fg, select_bg;
+
         if (strcmp(cfg_ptr->color_scheme, "dark") == 0) {
-            init_pair(CP_NORMAL, COLOR_WHITE,  COLOR_BLACK);
-            init_pair(CP_STATUS, COLOR_BLACK,  COLOR_WHITE);
-            init_pair(CP_CMDBAR, COLOR_BLACK,  COLOR_CYAN);
-            init_pair(CP_LNUM,   COLOR_YELLOW, COLOR_BLACK);
-            init_pair(CP_SEARCH, COLOR_BLACK,  COLOR_YELLOW);
-            init_pair(CP_SELECT, COLOR_WHITE,  COLOR_BLUE);
+            normal_fg = COLOR_WHITE;  normal_bg = COLOR_BLACK;
+            status_fg = COLOR_BLACK;  status_bg = COLOR_WHITE;
+            cmdbar_fg = COLOR_BLACK;  cmdbar_bg = COLOR_CYAN;
+            lnum_fg   = COLOR_YELLOW; lnum_bg   = COLOR_BLACK;
+            search_fg = COLOR_BLACK;  search_bg = COLOR_YELLOW;
+            select_fg = COLOR_WHITE;  select_bg = COLOR_BLUE;
         } else if (strcmp(cfg_ptr->color_scheme, "light") == 0) {
-            init_pair(CP_NORMAL, COLOR_BLACK,  COLOR_WHITE);
-            init_pair(CP_STATUS, COLOR_WHITE,  COLOR_BLUE);
-            init_pair(CP_CMDBAR, COLOR_WHITE,  COLOR_BLUE);
-            init_pair(CP_LNUM,   COLOR_BLUE,   COLOR_WHITE);
-            init_pair(CP_SEARCH, COLOR_WHITE,  COLOR_RED);
-            init_pair(CP_SELECT, COLOR_WHITE,  COLOR_BLUE);
+            normal_fg = COLOR_BLACK;  normal_bg = COLOR_WHITE;
+            status_fg = COLOR_WHITE;  status_bg = COLOR_BLUE;
+            cmdbar_fg = COLOR_WHITE;  cmdbar_bg = COLOR_BLUE;
+            lnum_fg   = COLOR_BLUE;   lnum_bg   = COLOR_WHITE;
+            search_fg = COLOR_WHITE;  search_bg = COLOR_RED;
+            select_fg = COLOR_WHITE;  select_bg = COLOR_BLUE;
         } else {
             // default: use terminal's own colours
-            init_pair(CP_NORMAL, -1,           -1);
-            init_pair(CP_STATUS, -1,           -1);
-            init_pair(CP_CMDBAR, -1,           -1);
-            init_pair(CP_LNUM,   COLOR_YELLOW, -1);
-            init_pair(CP_SEARCH, COLOR_BLACK,  COLOR_YELLOW);
-            init_pair(CP_SELECT, COLOR_WHITE,  COLOR_BLUE);
+            normal_fg = -1;           normal_bg = -1;
+            status_fg = -1;           status_bg = -1;
+            cmdbar_fg = -1;           cmdbar_bg = -1;
+            lnum_fg   = COLOR_YELLOW; lnum_bg   = -1;
+            search_fg = COLOR_BLACK;  search_bg = COLOR_YELLOW;
+            select_fg = COLOR_WHITE;  select_bg = COLOR_BLUE;
         }
+
+        // ...then let any explicit config-file colors override it, pair by pair.
+        init_pair(CP_NORMAL, resolve_color(cfg_ptr->color_normal_fg, normal_fg),
+                              resolve_color(cfg_ptr->color_normal_bg, normal_bg));
+        init_pair(CP_STATUS, resolve_color(cfg_ptr->color_status_fg, status_fg),
+                              resolve_color(cfg_ptr->color_status_bg, status_bg));
+        init_pair(CP_CMDBAR, resolve_color(cfg_ptr->color_cmdbar_fg, cmdbar_fg),
+                              resolve_color(cfg_ptr->color_cmdbar_bg, cmdbar_bg));
+        init_pair(CP_LNUM,   resolve_color(cfg_ptr->color_lnum_fg,   lnum_fg),
+                              resolve_color(cfg_ptr->color_lnum_bg,   lnum_bg));
+        init_pair(CP_SEARCH, resolve_color(cfg_ptr->color_search_fg, search_fg),
+                              resolve_color(cfg_ptr->color_search_bg, search_bg));
+        init_pair(CP_SELECT, resolve_color(cfg_ptr->color_select_fg, select_fg),
+                              resolve_color(cfg_ptr->color_select_bg, select_bg));
     }
 
     curs_set(cfg_ptr->cursor_style);
