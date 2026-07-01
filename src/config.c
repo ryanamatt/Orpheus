@@ -185,7 +185,8 @@ void load_config(Config *c) {
             key = trim(key);
 
             if (strcmp(key, "tab_width") == 0) {
-                c->tab_width = atoi(val);
+                int v = atoi(val);
+                c->tab_width = (v > 0) ? v : 4;
             }
 
             else if (strcmp(key, "show_line_numbers") == 0) {
