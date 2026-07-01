@@ -674,7 +674,7 @@ void do_find(EditorContext *edcon) {
 
     int len = gap_len(&edcon->buffer->text);
     if (len == 0) {
-        set_status("edcon", "Not found: \"%s\"", term);
+        set_status(edcon, "Not found: \"%s\"", term);
         return;
     }
     int tlen = strlen(term);
