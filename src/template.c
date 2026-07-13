@@ -120,7 +120,14 @@ static char *expand_vars(const char *src, const TemplateVar *vars, int n_vars, l
                     if (strlen(vars[v].name) == name_len &&
                         strncmp(vars[v].name, src + i + 2, name_len) == 0) {
                         size_t vlen = strlen(vars[v].value);
-                        if (oi + vlen >= cap) { cap = (oi + vlen) * 2; out = realloc(out, cap); }
+                        if (oi + vlen >= cap) { 
+                            cap = (oi + vlen) * 2; 
+                            out = realloc(out, cap); 
+                            if (!out) {
+                                log_error("expand_var: failed to reallocate (oi + vlen >= cap)");
+                                exit(1);
+                            }
+                        }
                         memcpy(out + oi, vars[v].value, vlen);
                         oi += vlen;
                         matched = 1;
@@ -130,7 +137,14 @@ static char *expand_vars(const char *src, const TemplateVar *vars, int n_vars, l
                 if (!matched) {
                     // Unknown {{...}} - copy it through verbatim, braces included.
                     size_t whole_len = (close + 2) - i;
-                    if (oi + whole_len >= cap) { cap = (oi + whole_len) * 2; out = realloc(out, cap); }
+                    if (oi + whole_len >= cap) {
+                        cap = (oi + whole_len) * 2;
+                        out = realloc(out, cap); 
+                        if (!out) {
+                                log_error("expand_var: failed to reallocate (io + whole_len >= cap).");
+                                exit(1);
+                        }
+                    }
                     memcpy(out + oi, src + i, whole_len);
                     oi += whole_len;
                 }
@@ -140,7 +154,14 @@ static char *expand_vars(const char *src, const TemplateVar *vars, int n_vars, l
             // No closing "}}" found - fall through and copy '{' literally.
         }
 
-        if (oi + 1 >= cap) { cap *= 2; out = realloc(out, cap); }
+        if (oi + 1 >= cap) {
+            cap *= 2;
+            out = realloc(out, cap);
+            if (!out) {
+                log_error("expand_var: failed to reallocate (oi + 1 >= cap).");
+                exit(1);
+            } 
+        }
         out[oi++] = src[i++];
     }
 
