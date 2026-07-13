@@ -24,12 +24,6 @@
 #include "logger.h"
 #include "buffer.h"
 
-// Declare Multi-Buffer Globals
-Buffer buffers[MAX_BUFFERS];
-int buf_count = 0;
-int cur_buf = 0;
-Buffer *E_ptr = NULL;
-
 /**
  * @brief Allocate and initialise a new buffer slot.
  *

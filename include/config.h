@@ -131,12 +131,4 @@ int config_dir_path(char *out, int outsize);
  */
 int parse_color_name(const char *name);
 
-/**
- * @brief Global editor configuration — initialised once in main().
- *
- * All modules access settings through this single instance rather than
- * through individual global variables.
- */
-extern Config cfg;
-
 #endif // CONFIG_H
