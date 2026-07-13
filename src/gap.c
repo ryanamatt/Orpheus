@@ -33,6 +33,10 @@
 void gap_init(Gap *g) {
     g->size = CHUNK;
     g->buf = malloc(g->size);
+    if (!g->buf) {
+        log_error("gap_init: out of memory allocating %d bytes", g->size);
+        exit(1);
+    }
     g->gap_start = 0;
     g->gap_end = g->size;
 }
@@ -90,6 +94,10 @@ void gap_grow(Gap *g, int need) {
     int add  = need - gap + CHUNK;
     int nsz  = g->size + add;
     char *nb = realloc(g->buf, nsz);
+    if (!nb) {
+        log_error("gap_grow: realloc failed growing %d -> %d bytes", g->size, nsz);
+        exit(1);
+    }
     log_debug("gap_grow: realloc %d -> %d bytes", g->size, nsz);
 
     // shift tail to make gap continuous at same gap_start
