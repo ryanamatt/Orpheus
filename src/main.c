@@ -43,6 +43,16 @@
  * Ctrl-N   Switch to next buffer/tab
  * Ctrl-P   Switch to previous buffer/tab
  *
+ * Config Generation
+ * -----------
+ * --gen-config [PATH]
+ *   Write a fully-commented config file with every setting shown at its
+ *   compiled-in default (commented-out, ready to uncomment and edit) to
+ *   PATH, or to ~/.config/Orpheus/orpheus.config if PATH is omitted.
+ *   Creates missing parent directories. Refuses to overwrite an existing
+ *   file at the destination. Exits immediately after writing (or on
+ *   failure) without starting the editor.
+ *
  * Templates
  * -----------
  * -t NAME / --template NAME
@@ -146,10 +156,13 @@
 /**
  * @brief Parse command-line arguments and set up initial buffers.
  *
- * Handles four cases:
+ * Handles five cases:
  * - No arguments: opens a single empty unnamed buffer and returns 0.
  * - @c -h / @c --help: prints usage information to stdout and returns 1.
  * - @c -v / @c --version: prints version and build date to stdout and returns 1.
+ * - @c --gen-config [PATH]: writes a fully-commented default config file to
+ *   PATH (or @c ~/.config/Orpheus/orpheus.config if omitted) and returns 1
+ *   on success or 2 if it could not be written (e.g. it already exists).
  * - One or more filenames, optionally preceded by @c -t / @c --template
  *   <name>: opens each filename as its own buffer, loading content from
  *   disk where possible. For any filename that does NOT already exist on
@@ -162,10 +175,12 @@
  * A non-zero return signals that the editor should not start (the caller
  * should exit after this function returns). Two non-zero values are used so
  * @c main() can choose the right process exit code:
- *   - 1: a clean informational exit (@c -h / @c --help, @c -v / @c --version).
- *        @c main() exits 0 for these, per the usual CLI convention.
- *   - 2: a usage error (e.g. @c -t / @c --template given without a name).
- *        @c main() exits 1 for these, so scripts can detect the failure.
+ *   - 1: a clean informational exit (@c -h / @c --help, @c -v / @c --version,
+ *        or a successful @c --gen-config). @c main() exits 0 for these, per
+ *        the usual CLI convention.
+ *   - 2: a usage error (e.g. @c -t / @c --template given without a name, or
+ *        @c --gen-config failing to write its file). @c main() exits 1 for
+ *        these, so scripts can detect the failure.
  *
  * @param cfg_ptr Pointer to the Config Instance (supplies time_format to
  *                apply_template()).
@@ -196,7 +211,10 @@ int handle_args(Config *cfg_ptr, EditorContext *edcon, int argc, char *argv[]) {
         printf("  -t, --template NAME   Populate any NEW file with ~/.config/Orpheus/\n");
         printf("                        templates/NAME.tmpl. Files that already exist\n");
         printf("                        on disk are opened as-is and never templated.\n");
-        printf("                        With no filename, applies to the new buffer.\n\n");
+        printf("                        With no filename, applies to the new buffer.\n");
+        printf("  --gen-config [PATH]   Write a fully-commented default config file to\n");
+        printf("                        PATH, or ~/.config/Orpheus/orpheus.config if PATH\n");
+        printf("                        is omitted. Refuses to overwrite an existing file.\n\n");
         printf("Keybindings:\n");
         printf("Arrow keys          Navigation - move 1 char in direction of arrow\n");
         printf("PgUp/PgDn Home/End  Navigation - top/bottom, front/end of line\n");
@@ -229,6 +247,44 @@ int handle_args(Config *cfg_ptr, EditorContext *edcon, int argc, char *argv[]) {
         printf("Version: %s\n", ORPHEUS_VERSION);
         printf("Built: %s\n", BUILD_DATE);
         return 1;
+    }
+
+    // orp --gen-config [PATH]
+    // An optional PATH may follow. If the next arg looks like another flag (or is absent), 
+    // fall back to the default location under ~/.config/Orpheus.
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--gen-config") == 0) {
+            char path[512];
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                int n = snprintf(path, sizeof(path), "%s", argv[i + 1]);
+                if (n < 0 || n >= (int)sizeof(path)) {
+                    fprintf(stderr, "orpheus: --gen-config path too long\n");
+                    return 2;
+                }
+            } else {
+                char dir[480];
+                if (!config_dir_path(dir, sizeof(dir))) {
+                    fprintf(stderr, "orpheus: --gen-config: cannot resolve config directory "
+                                    "($HOME not set)\n");
+                    return 2;
+                }
+                int n = snprintf(path, sizeof(path), "%s/%s", dir, CONFIG_FILE_NAME);
+                if (n < 0 || n >= (int)sizeof(path)) {
+                    fprintf(stderr, "orpheus: --gen-config path too long\n");
+                    return 2;
+                }
+            }
+
+            if (generate_config_file(path)) {
+                printf("Wrote default config to %s\n", path);
+                return 1;
+            } else {
+                fprintf(stderr, "orpheus: could not write config to %s\n"
+                                 "         (it may already exist, or its directory could "
+                                 "not be created)\n", path);
+                return 2;
+            }
+        }
     }
 
     // orp [-t|--template NAME] [file ...]
