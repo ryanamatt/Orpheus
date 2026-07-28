@@ -347,7 +347,7 @@ int mini_input(EditorContext *edcon, const char *prompt, char *out, int max) {
         if (c == 27) { attroff(COLOR_PAIR(CP_CMDBAR)); return 0; }
         if ((c == KEY_BACKSPACE || c == 127 || c == '\b') && len > 0) {
             out[--len] = '\0';
-        } else if (isprint(c) && len < max - 1) {
+        } else if (c >= 32 && c < 256 && isprint((unsigned char)c) && len < max - 1) {
             out[len++] = (char)c;
             out[len]   = '\0';
         }
