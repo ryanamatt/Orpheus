@@ -132,7 +132,15 @@ tab_width=4
 Colours are fully customizable too, either by choosing a built-in `color_scheme` or by overriding
 individual UI colours (text, status bar, line numbers, search highlight, and more).
 
-See [`orpheus_config.example`](orpheus_config.example) for an example file, and
+Generate a Default Config by
+
+```bash
+orp --gen-config [file]
+# If file not provided then generates file at
+~/.config/Orpheus/orpheus.config
+```
+
+See [`docs/orpheus_config.example`](docs/orpheus_config.example) for an example file, and
 **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** for the full settings reference, including all
 colour customization options.
 

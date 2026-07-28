@@ -131,4 +131,16 @@ int config_dir_path(char *out, int outsize);
  */
 int parse_color_name(const char *name);
 
+/**
+ * @brief Write a fully-commented, default-valued config file to @p path.
+ *
+ * See config.h for the full contract. The written values are read straight
+ * off a freshly-populated Config via config_defaults(), so this can never
+ * silently drift out of sync with the real compiled-in defaults.
+ *
+ * @param path Destination file path.
+ * @return 1 on success, 0 on failure.
+ */
+int generate_config_file(const char *path);
+
 #endif // CONFIG_H
