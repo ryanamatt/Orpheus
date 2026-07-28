@@ -129,6 +129,7 @@
 #include <string.h>
 #include <errno.h>
 #include <time.h>
+#include <signal.h>
 #include <ncurses.h>
 #include "logger.h"
 #include "version.h"
@@ -338,6 +339,8 @@ int handle_args(Config *cfg_ptr, EditorContext *edcon, int argc, char *argv[]) {
  * @return 0 on normal exit.
  */
 int main(int argc, char *argv[]) {
+    signal(SIGPIPE, SIG_IGN);
+
 #ifdef DEBUG
     time_t raw_time;
     time(&raw_time);
