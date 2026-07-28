@@ -248,15 +248,19 @@ void draw_rows(Config *cfg_ptr, EditorContext *edcon) {
                     char c = gap_char(&edcon->buffer->text, i);
                     int selected = have_sel && i >= sel_s && i < sel_e;
                     if (selected) attron(COLOR_PAIR(CP_SELECT) | A_REVERSE);
+
+                    int text_right_edge = edcon->buffer->cols - gutter;
                     if (c == '\t') {
                         int next = (col / cfg_ptr->tab_width + 1) * cfg_ptr->tab_width;
-                        while (col < next && col - edcon->buffer->col_off < edcon->buffer->cols - 5) {
+                        while (col < next && col - edcon->buffer->col_off < text_right_edge) {
                             if (col >= edcon->buffer->col_off) addch(' ');
                             col++;
                         }
-                    } else {
+                    } 
+                        
+                    else {
                         if (col >= edcon->buffer->col_off
-                                && col - edcon->buffer->col_off < edcon->buffer->cols - 5)
+                                && col - edcon->buffer->col_off < text_right_edge)
                             addch((unsigned char)c);
                         col++;
                     }
