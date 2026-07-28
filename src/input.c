@@ -72,6 +72,7 @@ int main_input(Config *cfg_ptr, EditorContext *edcon) {
             char buf[256];
             if (mini_input(edcon, "Save as: ", buf, sizeof buf)) {
                 strncpy(edcon->buffer->filename, buf, sizeof(edcon->buffer->filename));
+                edcon->buffer->filename[sizeof(edcon->buffer->filename) - 1] = '\0';
                 edcon->buffer->search_term[sizeof(edcon->buffer->search_term) - 1] = '\0';
                 log_debug("main_input: save-as '%s'", edcon->buffer->filename);
                 save_file(edcon);
