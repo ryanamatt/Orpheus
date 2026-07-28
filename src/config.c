@@ -223,7 +223,7 @@ void load_config(Config *c) {
 
             else if (strcmp(key, "key_delay") == 0) {
                 int v = atoi(val);
-                c->focus_width = (v > 0) ? v : 72;
+                c->key_delay = (v > 0) ? v : 50;
             }
 
             else if (strcmp(key, "focus_mode") == 0) {
