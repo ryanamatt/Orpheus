@@ -190,19 +190,24 @@ void load_config(Config *c) {
             }
 
             else if (strcmp(key, "show_line_numbers") == 0) {
-                c->show_line_numbers = atoi(val);
+                int v = atoi(val);
+                c->show_line_numbers = (v == 0) ? v : 1;
             }
 
             else if (strcmp(key, "auto_indent") == 0) {
-                c->auto_indent = atoi(val);
+                int v = atoi(val);
+                c->auto_indent = (v == 0) ? v : 1;
             }
 
             else if (strcmp(key, "show_statusbar") == 0) {
-                c->show_statusbar = atoi(val);
+                int v = atoi(val);
+                c->show_statusbar = (v == 0) ? v : 1;
             }
 
             else if (strcmp(key, "cursor_style") == 0) {
-                c->cursor_style = atoi(val);
+                int v = atoi(val);
+                c->cursor_style = (v > 0 && v < 3) ? v : 1;
+
             }
 
             else if (strcmp(key, "color_scheme") == 0) {
@@ -212,19 +217,23 @@ void load_config(Config *c) {
             }
 
             else if (strcmp(key, "gutter_width") == 0) {
-                c->gutter_width = atoi(val);
+                int v = atoi(val);
+                c->gutter_width = (v >= 2) ? v : 5;
             }
 
             else if (strcmp(key, "key_delay") == 0) {
-                c->key_delay = atoi(val);
+                int v = atoi(val);
+                c->focus_width = (v > 0) ? v : 72;
             }
 
             else if (strcmp(key, "focus_mode") == 0) {
-                c->focus_mode = atoi(val);
+                int v = atoi(val);
+                c->focus_mode = (v == 0) ? v : 1;
             }
 
             else if (strcmp(key, "focus_width") == 0) {
-                c->focus_width = atoi(val);
+                int v = atoi(val);
+                c->focus_width = (v > 0) ? v : 72;
             }
 
             else if (strcmp(key, "time_format") == 0) {
